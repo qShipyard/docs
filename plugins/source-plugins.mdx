@@ -1,7 +1,7 @@
 ---
-title: "Source Plugins: Fetch Commits from Git Platforms"
+title: "Source Plugins: Fetch Commits from Any Git Platform"
 sidebarTitle: "Source Plugins"
-description: "Source plugins fetch raw commits from GitHub, GitLab, Bitbucket, or a local git repository. Learn the interface and how to use built-in and custom source plugins."
+description: "Source plugins fetch commits from GitHub, GitLab, Bitbucket, or a local git repo. Learn the SourcePlugin interface and how to use or build a source plugin."
 ---
 
 A source plugin is responsible for fetching raw commit data from a git platform within a given scan window. The Go core calls your source plugin with a `SourceRequest` describing the repository, time range, and scan depth — the plugin returns a list of `RawCommit` objects. narratorlog ships with built-in source plugins for GitHub, GitLab, Bitbucket, and local git repositories.
@@ -79,7 +79,7 @@ interface SourceResponse {
 
 ### The `author_login` field
 
-narratorlog is a **personal shipping log** — when you connect a source with a Personal Access Token, that token doubles as identity. When `author_login` is set on a request, your plugin should return commits from PRs that handle authored, merged into **any** base branch (not just the repo default). When `author_login` is absent, fall back to branch-centric listing — return all activity on the `branch` field within the scan window.
+narratorlog is a **personal shipping log** — when you connect a source with a Personal Access Token, that token doubles as identity. When `author_login` is set on a request, your plugin should return only the commits from PRs that handle authored, merged into **any** base branch (not just the repo default). When `author_login` is absent, fall back to branch-centric listing — return all activity on the `branch` field within the scan window.
 
 The token owner's handle is resolved once when the token is saved (via the provider's authenticated-user endpoint) and stored on the source connection.
 

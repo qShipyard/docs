@@ -1,7 +1,7 @@
 ---
-title: "Inbound Webhooks for narratorlog Scan Triggers"
+title: "narratorlog Inbound Webhooks — GitHub, GitLab, Bitbucket"
 sidebarTitle: "Webhooks"
-description: "narratorlog registers webhooks on GitHub, GitLab, and Bitbucket to trigger scans automatically on push, tag, or PR merge events."
+description: "narratorlog registers webhooks on GitHub, GitLab, and Bitbucket to trigger scans on push, tag, or PR merge. No manual webhook configuration is required."
 ---
 
 narratorlog registers webhooks on your git platform when you connect a repository. These webhooks allow narratorlog to trigger scans automatically based on your configured cadence — on push, on tag, or on PR merge. You don't need to configure the webhooks manually; narratorlog handles registration and removal for you.
@@ -51,10 +51,6 @@ narratorlog fully manages the webhook lifecycle for you:
 - **Disconnecting a repository** — when you disconnect a repo via `DELETE /api/v1/repos/:id`, narratorlog removes the webhook from the platform. No orphaned hooks are left behind.
 
 No manual steps are needed at any point.
-
-## Webhook signature verification
-
-narratorlog verifies the HMAC-SHA256 signature on every inbound webhook request before processing it. Requests with an invalid or missing signature are rejected with a `401` response. The webhook secret is generated automatically when the webhook is registered and is stored encrypted alongside the repository record.
 
 <Note>
   If you're behind a firewall or load balancer, ensure the `/webhooks/*` path is publicly accessible from your git platform's IP ranges. GitHub publishes its webhook IP ranges at [https://api.github.com/meta](https://api.github.com/meta).

@@ -36,7 +36,7 @@ narratorlog produces a different output for each audience from a single scan. Ev
 
 **Self-hosted, always.** narratorlog runs on your infrastructure. Nothing is sent anywhere you have not explicitly configured. There is no SaaS version, no phone-home, and no vendor dependency beyond your chosen AI provider.
 
-**Bring your own AI.** narratorlog is AI-provider agnostic. Connect your own Anthropic, OpenAI, Ollama, Groq, or custom LLM endpoint. For teams that use Ollama, zero data leaves your machine — even in deep scan mode.
+**Bring your own AI.** narratorlog is AI-provider agnostic. Connect your own Anthropic, OpenAI, or Ollama endpoint — or any custom HTTP-compatible LLM. For teams that use Ollama, zero data leaves your machine — even in deep scan mode.
 
 **A plugin system built for extension.** Sources, AI providers, and output destinations are all plugins. Writing an output plugin requires only TypeScript. The plugin interface is stable and versioned.
 
@@ -44,7 +44,7 @@ narratorlog produces a different output for each audience from a single scan. Ev
 
 ## Current status
 
-narratorlog is working end to end. The Go pipeline, background worker, web app, and Docker setup are all implemented.
+narratorlog is working end to end. The pipeline, background worker, web app, and Docker setup are all implemented.
 
 - **Sources:** GitHub, GitLab, and Bitbucket — connect each with a Personal Access Token (no OAuth app needed)
 - **AI providers:** Anthropic Claude, OpenAI GPT-4o, and Ollama (Groq coming soon)

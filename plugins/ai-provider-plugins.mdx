@@ -1,7 +1,7 @@
 ---
 title: "AI Provider Plugins: Connect Any LLM to narratorlog"
 sidebarTitle: "AI Provider Plugins"
-description: "AI provider plugins call your chosen LLM to generate commit group summaries and audience-specific changelog drafts. Use built-in providers or connect any custom endpoint."
+description: "AI provider plugins call your LLM to generate commit summaries and audience-specific drafts. Use a built-in provider or connect any custom AI endpoint."
 ---
 
 AI provider plugins perform the two-pass summarization at the heart of narratorlog. **Pass 1** calls `summarize` once per commit group, producing a 2–3 sentence technical summary. **Pass 2** calls `generate` once per audience, passing all of the Pass 1 summaries together to produce the full audience-specific changelog draft. Separating these two passes keeps prompts focused and keeps token costs predictable — the summarize call is small and repeatable, while the generate call has everything it needs in a single context window.

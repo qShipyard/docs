@@ -1,5 +1,5 @@
 ---
-title: "How narratorlog Turns Commits into Changelogs"
+title: "How narratorlog Turns Your Git Commits into Changelogs"
 sidebarTitle: "How It Works"
 description: "narratorlog reads commits, understands them in context, generates audience-specific drafts with AI, and delivers them only after your team approves."
 ---
@@ -20,7 +20,7 @@ Every scan runs the same 8-stage pipeline. Stages 1–6 are fully automatic. Sta
 | 1 | **SCAN** | Fetches raw commits from your git platform for the scan window |
 | 2 | **FILTER** | Removes noise — bots, duplicate commits, lock-file-only changes, and WIP messages |
 | 3 | **ENRICH** | Adds PR and issue context, detects breaking changes, and infers code domain |
-| 4 | **CONTEXT** | Reads surrounding codebase context via the Rust reader (depth=deep only) |
+| 4 | **CONTEXT** | Reads surrounding codebase context for changed functions (depth=deep only) |
 | 5 | **CHUNK** | Groups related commits into logical units by PR or domain |
 | 6 | **SUMMARIZE** | Runs a two-pass AI process: chunk summaries first, then full audience drafts in parallel |
 | 7 | **APPROVAL** | Pauses for human review — your team reads, edits, and approves each draft |

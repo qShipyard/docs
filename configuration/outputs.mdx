@@ -1,5 +1,5 @@
 ---
-title: "Configure Delivery Outputs in narratorlog"
+title: "Configure Changelog Output Destinations in narratorlog"
 sidebarTitle: "Outputs"
 description: "Route approved changelogs to Slack, Notion, Discord, Linear, email, or a Markdown file. Each audience can have its own delivery destination."
 ---
@@ -110,6 +110,34 @@ outputs:
 <Note>
   The Discord webhook URL grants anyone with it the ability to post to your channel. Store it carefully. Consider using a dedicated channel for narratorlog deliveries.
 </Note>
+
+---
+
+## Linear
+
+Posts an approved draft as a document in a Linear team.
+
+**Required environment variable**
+
+| Variable | How to get it |
+|----------|--------------|
+| `LINEAR_API_KEY` | Go to [linear.app](https://linear.app) → **Settings → API → Personal API keys** → create a new key and copy it. |
+
+**Config fields**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `team_id` | string | Yes | The ID of the Linear team where the document will be posted. Find it in **Settings → API → Team IDs**, or copy it from the team's URL slug. |
+
+**Example**
+
+```yaml
+outputs:
+  - audience: product
+    plugin: linear
+    config:
+      team_id: 'your-team-id'
+```
 
 ---
 

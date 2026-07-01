@@ -1,7 +1,7 @@
 ---
-title: "narratorlog Environment Variable Reference"
+title: "narratorlog Environment Variables Configuration Guide"
 sidebarTitle: "Environment Variables"
-description: "Complete reference for all environment variables used by the narratorlog API, worker, and web app. Required variables, defaults, and configuration guidance."
+description: "Reference for all environment variables used by the narratorlog API, worker, and web app. Covers required vars, optional settings, and plugin credentials."
 ---
 
 narratorlog is configured via environment variables set in your `.env` file (for Docker Compose deployments) or passed directly to the containers. This page lists all variables the API, worker, and web app read at startup.
@@ -28,10 +28,8 @@ These variables have safe defaults and only need to be set when you want to over
 
 | Variable | Default | Description |
 |---|---|---|
-| `PORT` | `8080` | Port the API server listens on |
 | `LOG_LEVEL` | `info` | Log verbosity. Accepted values: `debug`, `info`, `warn`, `error` |
 | `WORKER_CONCURRENCY` | `5` | Number of concurrent background jobs the worker processes |
-| `READER_SOCKET` | `/tmp/reader.sock` | Unix socket path for the Rust reader sidecar. Only needed when `ai_depth` is set to `deep`. |
 
 ## Plugin credential variables
 

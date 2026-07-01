@@ -1,7 +1,7 @@
 ---
-title: "narratorlog Plugin System Overview"
+title: "narratorlog Plugin System: Sources, AI, and Outputs"
 sidebarTitle: "Overview"
-description: "narratorlog's plugin system lets you extend commit sources, AI providers, and delivery outputs. All plugins are TypeScript packages using the @narratorlog/sdk."
+description: "Extend narratorlog with custom source, AI provider, and output plugins. All plugins are TypeScript packages built on the @narratorlog/sdk."
 ---
 
 narratorlog's plugin system covers three layers: how commits are fetched (source plugins), how AI generates summaries (AI provider plugins), and where approved drafts are delivered (output plugins). All plugins are TypeScript packages that implement typed interfaces from `@narratorlog/sdk`. The Go core communicates with every plugin the same way — via subprocess JSON over stdin/stdout — so you can swap, extend, or build any layer without touching the core.
@@ -68,7 +68,7 @@ outputs:
   - audience: developers
     plugin: slack
     config:
-      channel: "#eng-updates"
+      channel: '#engineering'
 
   # Local custom plugin — relative path from repo root
   - audience: product

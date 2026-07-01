@@ -1,7 +1,7 @@
 ---
-title: "Configure narratorlog with .narratorlog.yml"
+title: "narratorlog .narratorlog.yml Configuration File Reference"
 sidebarTitle: ".narratorlog.yml"
-description: "The .narratorlog.yml file controls how narratorlog scans your repositories, which AI provider to use, how to filter commits, and where to deliver approved drafts."
+description: "The .narratorlog.yml file controls scan behavior, AI provider selection, commit filtering, and output routing for each connected repository."
 ---
 
 `.narratorlog.yml` lives at the root of your repository. narratorlog reads it when processing a scan. It controls scan behavior, AI provider selection, commit filtering, and output routing.
@@ -87,7 +87,7 @@ Controls what narratorlog fetches and how deeply it reads.
 
 ## `filter`
 
-Removes noise before the AI sees any commits. Filtered commits are marked in the database with `is_noise = true` — they are never deleted, so you can audit what was skipped.
+Removes noise before the AI sees any commits. Filtered commits are retained for auditability — you can always review what was skipped in the scan detail view.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|

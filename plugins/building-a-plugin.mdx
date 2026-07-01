@@ -1,7 +1,7 @@
 ---
-title: "Build a Custom narratorlog Plugin"
+title: "Build a Custom Plugin for narratorlog with the SDK"
 sidebarTitle: "Build a Plugin"
-description: "Build a custom output, source, or AI provider plugin for narratorlog using TypeScript and the @narratorlog/sdk. Scaffold, implement, test, and register your plugin."
+description: "Build a source, AI provider, or output plugin for narratorlog using TypeScript and @narratorlog/sdk. Scaffold, implement, test, and register your plugin."
 ---
 
 You can extend narratorlog with custom plugins for any of the three plugin types — source, AI provider, or output. Plugins are TypeScript packages that implement typed interfaces from `@narratorlog/sdk`. The Go core communicates with them via subprocess JSON over stdin/stdout, so there is no special runtime, no RPC framework, and no daemon to manage. If your plugin reads from stdin and writes to stdout, it works.

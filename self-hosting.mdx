@@ -56,7 +56,7 @@ This guide walks you through a production deployment of narratorlog on your own 
     ```
 
     <Warning>
-      `APP_SECRET` and `ENCRYPTION_KEY` **must be the same values** in both the API service and the worker service. If `ENCRYPTION_KEY` differs between the two, the worker will fail to decrypt stored credentials silently — scans will appear to run but will fail to authenticate with your git providers or AI providers. Double-check that both services share the same `.env` file or that both environment variables are set identically in each service.
+      `ENCRYPTION_KEY` **must be identical** in both the API service and the worker service. If `ENCRYPTION_KEY` differs between the two, the worker will fail to decrypt stored credentials silently — scans will appear to run but will fail to authenticate with your git providers or AI providers. Double-check that both services share the same `.env` file or that `ENCRYPTION_KEY` is set to the same value in each service.
     </Warning>
   </Step>
 

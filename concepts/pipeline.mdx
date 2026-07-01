@@ -1,5 +1,5 @@
 ---
-title: "The narratorlog 8-Stage Processing Pipeline"
+title: "The narratorlog 8-Stage Commit Processing Pipeline"
 sidebarTitle: "Pipeline"
 description: "Learn how narratorlog's 8-stage pipeline transforms raw git commits into human-approved, audience-specific changelogs ready for delivery."
 ---
@@ -32,7 +32,7 @@ narratorlog calls your configured source plugin (GitHub, GitLab, Bitbucket, or g
 - `on-merge` → from the last scan's end time to now
 - `manual` → from the explicit `scan_from` / `scan_to` dates you provide, or a default 7-day lookback
 
-The source plugin runs as a subprocess and returns structured commit data, which narratorlog stores in the database. The scan record is updated with a raw `commit_count`.
+The source plugin runs as a subprocess and returns structured commit data for processing. The scan record is updated with the total commit count.
 
 **Depth options** control how much information the source plugin collects per commit:
 
@@ -40,7 +40,7 @@ The source plugin runs as a subprocess and returns structured commit data, which
 |-------|-----------------|
 | `messages-only` | Commit messages and PR descriptions only. No code leaves the machine beyond commit metadata. |
 | `standard` | Adds diffs for each changed file. More context, better AI summaries. |
-| `deep` | Adds surrounding codebase context via the Rust reader in Stage 4. Produces the richest summaries. |
+| `deep` | Adds surrounding codebase context for changed functions via Stage 4. Produces the richest summaries. |
 
 **If the source plugin fails**, narratorlog marks the scan as `failed` and retries up to 3 times with exponential backoff.
 
@@ -48,7 +48,7 @@ The source plugin runs as a subprocess and returns structured commit data, which
 
 ### Stage 2 — FILTER
 
-narratorlog removes commits that should not appear in a changelog. Filtered commits are flagged as `is_noise = true` in the database — they are never deleted, so you can always audit what was excluded and why.
+narratorlog removes commits that should not appear in a changelog. Filtered commits are retained but excluded from processing — they are never deleted, so you can always audit what was excluded and why.
 
 Built-in noise rules (applied in order):
 
@@ -78,7 +78,7 @@ Enrichment covers:
 
 - **PR resolution** — fetches the full PR title, description, labels, and review comments from the platform API.
 - **Issue resolution** — parses `Closes #123`, `Fixes #123`, and `Refs #123` patterns from PR descriptions and commit messages, then fetches each referenced issue's title and body.
-- **Breaking change detection** — checks for `BREAKING CHANGE:` footer (Conventional Commits spec), `feat!:` / `fix!:` message prefixes, and `breaking-change` PR labels. Sets `is_breaking = true` on matching commits.
+- **Breaking change detection** — checks for `BREAKING CHANGE:` footer (Conventional Commits spec), `feat!:` / `fix!:` message prefixes, and `breaking-change` PR labels. Matching commits are flagged as breaking changes.
 - **Domain inference** — maps changed file paths to logical codebase domains. For example, `internal/auth/**` → `auth`, `apps/web/**` → `frontend`, `deploy/**` → `infrastructure`. These domains drive grouping in Stage 5 and section headings in your changelog.
 - **Author attribution** — preserves author names for contribution credit in developer-facing drafts.
 
@@ -86,15 +86,15 @@ Enrichment covers:
 
 ### Stage 4 — CONTEXT
 
-The Rust reader sidecar extracts surrounding code context for every changed function in every changed file. This gives the AI a richer understanding of what a change actually does in your system — not just which lines were added or removed.
+narratorlog extracts surrounding code context for every changed function in every changed file. This gives the AI a richer understanding of what a change actually does in your system — not just which lines were added or removed.
 
 <Note>
   Stage 4 only runs when `ai.depth` is set to `deep` in your config. Standard scans skip this stage entirely and still produce high-quality output.
 </Note>
 
-For each changed file, narratorlog sends a read request to the Rust reader over a Unix socket. The reader parses the file's AST, identifies which functions were touched by the diff, extracts N lines of surrounding context per function (configurable via `ai.context_lines`), and resolves one level of imports. The context is stored in the database and included in the AI prompt at Stage 6.
+For each changed file, narratorlog identifies which functions were touched by the diff, extracts N lines of surrounding context per function (configurable via `ai.context_lines`), and resolves one level of imports. This context is included in the AI prompt at Stage 6.
 
-**If the reader is unavailable** or cannot parse a file, narratorlog skips context for that file and continues. Stage 4 is an enhancement — the pipeline never fails because of a missing context response.
+If context cannot be read for a file, narratorlog skips it and continues. Stage 4 is an enhancement — the pipeline never fails because of a missing context response.
 
 <Warning>
   When using `depth: deep`, actual source code is included in the request sent to your AI provider. narratorlog scrubs secrets from diffs before transmission and shows you a privacy summary on first use. If you want deep mode with no data leaving your infrastructure, pair it with a local Ollama provider.
@@ -148,13 +148,13 @@ approval:
   timeout: 24h   # auto-approve pending drafts after 24 hours; use "never" to always require manual approval
 ```
 
-Auto-approved drafts are recorded in the audit log with `approved_by = null`.
+Auto-approved drafts are recorded in the audit log without a specific approver.
 
 ---
 
 ### Stage 8 — DELIVER
 
-Once the last audience draft is approved, narratorlog enqueues a delivery job automatically. For each approved draft, the worker determines which output plugin handles that audience, calls the plugin, and records the result — including the delivery reference (a Slack message URL, a Notion page link, etc.) — in the `deliveries` table.
+Once the last audience draft is approved, narratorlog enqueues a delivery job automatically. For each approved draft, the worker determines which output plugin handles that audience, calls the plugin, and records the result — including the delivery reference (a Slack message URL, a Notion page link, etc.) — against the scan record.
 
 Each output plugin is called as a subprocess. If a plugin call fails, narratorlog retries up to 3 times with exponential backoff. If one plugin fails after retries but others succeed, the scan is still marked `delivered` — failed deliveries are surfaced in the web app with a manual retry option and do not revert any approvals.
 

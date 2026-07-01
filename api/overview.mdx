@@ -1,5 +1,5 @@
 ---
-title: "narratorlog REST API Reference Overview"
+title: "narratorlog REST API — Base URL, Auth, and Error Format"
 sidebarTitle: "Overview"
 description: "The narratorlog API is a JSON REST API. Base URL is https://your-instance.com/api/v1. All requests use session cookies for authentication."
 ---
@@ -26,7 +26,7 @@ Git providers are connected separately via a Personal Access Token in **Settings
 
 Every API endpoint is relative to your instance's base URL:
 
-```
+```text
 https://your-instance.com/api/v1
 ```
 
@@ -60,7 +60,7 @@ All errors return a consistent JSON envelope regardless of status code:
 
 List endpoints use cursor-based pagination. Pass `limit` and `cursor` as query parameters:
 
-```
+```text
 GET /api/v1/scans?limit=20&cursor=uuid
 ```
 
@@ -83,7 +83,7 @@ Pass `next_cursor` as the `cursor` parameter in your next request to fetch the f
 
 narratorlog exposes a WebSocket endpoint for real-time scan progress. Connect to it while a scan is running to receive live stage updates:
 
-```
+```text
 WS /ws/scans/:id
 ```
 
@@ -104,7 +104,7 @@ The server sends the following message types:
 
 Use the health endpoint to verify that all services are running correctly:
 
-```
+```text
 GET /health
 ```
 

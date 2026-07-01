@@ -1,7 +1,7 @@
 ---
-title: "Repositories API — Connect and Manage Git Repos"
+title: "Repositories API — Connect and Configure Git Repositories"
 sidebarTitle: "Repositories"
-description: "REST endpoints for connecting, listing, configuring, and disconnecting git repositories in narratorlog. Connecting a repo registers a webhook and queues an initial scan."
+description: "REST endpoints to connect, list, configure, and disconnect git repositories. Connecting a repo registers a webhook and queues an initial scan."
 ---
 
 The repositories endpoints let you manage which git repositories narratorlog monitors. Connecting a repository triggers webhook registration on the git platform and queues an initial scan. Once connected, narratorlog listens for push events, tags, and merged pull requests according to the repository's configured cadence.
