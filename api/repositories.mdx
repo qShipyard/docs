@@ -1,0 +1,262 @@
+---
+title: "Repositories API — Connect and Manage Git Repos"
+sidebarTitle: "Repositories"
+description: "REST endpoints for connecting, listing, configuring, and disconnecting git repositories in narratorlog. Connecting a repo registers a webhook and queues an initial scan."
+---
+
+The repositories endpoints let you manage which git repositories narratorlog monitors. Connecting a repository triggers webhook registration on the git platform and queues an initial scan. Once connected, narratorlog listens for push events, tags, and merged pull requests according to the repository's configured cadence.
+
+<Note>
+  Before you can connect repositories, an admin must configure a Personal Access Token for the relevant git provider under **Settings → Sources**.
+</Note>
+
+---
+
+### GET /api/v1/repos
+
+List all connected repositories for your team.
+
+**Example request:**
+
+```shell
+curl https://your-instance.com/api/v1/repos \
+  -b cookies.txt
+```
+
+**Response 200:**
+
+```json
+{
+  "data": [
+    {
+      "id": "uuid",
+      "name": "backend",
+      "full_name": "qShipyard/backend",
+      "url": "https://github.com/qShipyard/backend",
+      "provider": "github",
+      "default_branch": "main",
+      "is_active": true,
+      "last_scanned_at": "2026-06-21T09:00:00Z",
+      "config": {}
+    }
+  ]
+}
+```
+
+<ResponseField name="id" type="string">
+  UUID of the connected repository record.
+</ResponseField>
+
+<ResponseField name="full_name" type="string">
+  The `owner/repo` slug from the git platform.
+</ResponseField>
+
+<ResponseField name="provider" type="string">
+  Git platform: `github`, `gitlab`, or `bitbucket`.
+</ResponseField>
+
+<ResponseField name="is_active" type="boolean">
+  Whether narratorlog is actively monitoring this repository.
+</ResponseField>
+
+<ResponseField name="last_scanned_at" type="string">
+  ISO 8601 timestamp of the most recently completed scan.
+</ResponseField>
+
+<ResponseField name="config" type="object">
+  The repository's scan configuration. See `PATCH /api/v1/repos/:id` for the full config schema.
+</ResponseField>
+
+---
+
+### GET /api/v1/repos/available
+
+List repositories available to connect from your team's linked git platform. Use this endpoint to populate the repository selection UI before calling `POST /api/v1/repos`.
+
+**Example request:**
+
+```shell
+curl "https://your-instance.com/api/v1/repos/available" \
+  -b cookies.txt
+```
+
+**Response 200:**
+
+```json
+{
+  "data": [
+    {
+      "provider_id": "123456",
+      "full_name": "qShipyard/frontend",
+      "url": "https://github.com/qShipyard/frontend",
+      "already_connected": false
+    }
+  ]
+}
+```
+
+<ResponseField name="provider_id" type="string">
+  The platform-native ID for the repository (e.g. GitHub's numeric repo ID).
+</ResponseField>
+
+<ResponseField name="full_name" type="string">
+  The `owner/repo` slug on the git platform.
+</ResponseField>
+
+<ResponseField name="already_connected" type="boolean">
+  `true` if this repository is already connected to narratorlog. You can use this to filter the list and show only connectable repos.
+</ResponseField>
+
+---
+
+### POST /api/v1/repos
+
+Connect a new repository to narratorlog. On success, narratorlog registers a webhook on the git platform and enqueues an initial scan covering recent activity.
+
+<ParamField body="provider" type="string" required>
+  Git platform: `github`, `gitlab`, or `bitbucket`.
+</ParamField>
+
+<ParamField body="provider_id" type="string" required>
+  The platform-native ID of the repository. Retrieve this from `GET /api/v1/repos/available`.
+</ParamField>
+
+<ParamField body="full_name" type="string" required>
+  The `owner/repo` slug, e.g. `qShipyard/backend`.
+</ParamField>
+
+<ParamField body="url" type="string" required>
+  Full HTTPS URL of the repository on the git platform.
+</ParamField>
+
+<ParamField body="default_branch" type="string" required>
+  The branch narratorlog should monitor, e.g. `main`.
+</ParamField>
+
+**Example request:**
+
+```shell
+curl -X POST https://your-instance.com/api/v1/repos \
+  -b cookies.txt \
+  -H "Content-Type: application/json" \
+  -d '{
+    "provider": "github",
+    "provider_id": "123456",
+    "full_name": "qShipyard/backend",
+    "url": "https://github.com/qShipyard/backend",
+    "default_branch": "main"
+  }'
+```
+
+```json
+{
+  "provider": "github",
+  "provider_id": "123456",
+  "full_name": "qShipyard/backend",
+  "url": "https://github.com/qShipyard/backend",
+  "default_branch": "main"
+}
+```
+
+**Response 201:**
+
+```json
+{
+  "id": "uuid",
+  "full_name": "qShipyard/backend",
+  "is_active": true,
+  "webhook_registered": true
+}
+```
+
+**Side effects:**
+
+- Registers a webhook on the git platform using your configured Personal Access Token
+- Enqueues an initial scan job to capture recent commit history
+
+**Response 409** — a repository with this `provider_id` is already connected.
+
+---
+
+### GET /api/v1/repos/:id
+
+Get full detail for a connected repository, including its current scan configuration.
+
+**Example request:**
+
+```shell
+curl https://your-instance.com/api/v1/repos/uuid \
+  -b cookies.txt
+```
+
+**Response 200:** A full repository object matching the shape described in `GET /api/v1/repos`, with the `config` object populated.
+
+---
+
+### PATCH /api/v1/repos/:id
+
+Update the scan configuration for a connected repository. Only the fields you include are updated — omitted config fields are left unchanged.
+
+<ParamField body="config.branch" type="string">
+  The branch to monitor. Defaults to the repository's `default_branch`.
+</ParamField>
+
+<ParamField body="config.cadence" type="string">
+  When to trigger automatic scans. Valid values: `on-push`, `on-merge`, `on-tag`, `scheduled`.
+</ParamField>
+
+<ParamField body="config.ai_depth" type="string">
+  The level of AI analysis to apply per scan. Valid values: `shallow`, `standard`, `deep`.
+</ParamField>
+
+<ParamField body="config.audiences" type="array">
+  List of audience identifiers to generate drafts for, e.g. `["developers", "product"]`.
+</ParamField>
+
+**Example request:**
+
+```shell
+curl -X PATCH https://your-instance.com/api/v1/repos/uuid \
+  -b cookies.txt \
+  -H "Content-Type: application/json" \
+  -d '{
+    "config": {
+      "branch": "develop",
+      "cadence": "on-tag",
+      "ai_depth": "deep",
+      "audiences": ["developers", "product"]
+    }
+  }'
+```
+
+```json
+{
+  "config": {
+    "branch": "develop",
+    "cadence": "on-tag",
+    "ai_depth": "deep",
+    "audiences": ["developers", "product"]
+  }
+}
+```
+
+**Response 200:** The updated repository object.
+
+---
+
+### DELETE /api/v1/repos/:id
+
+Disconnect a repository from narratorlog. This removes the webhook from the git platform and stops future scans. It does **not** delete any existing scan history, drafts, or delivered changelogs.
+
+**Example request:**
+
+```shell
+curl -X DELETE https://your-instance.com/api/v1/repos/uuid \
+  -b cookies.txt
+```
+
+**Response 204:** No content.
+
+<Warning>
+  Disconnecting a repository removes the webhook immediately. Any in-progress scan may complete, but no new scans will be triggered until you reconnect the repository.
+</Warning>

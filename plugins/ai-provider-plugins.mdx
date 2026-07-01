@@ -1,0 +1,198 @@
+---
+title: "AI Provider Plugins: Connect Any LLM to narratorlog"
+sidebarTitle: "AI Provider Plugins"
+description: "AI provider plugins call your chosen LLM to generate commit group summaries and audience-specific changelog drafts. Use built-in providers or connect any custom endpoint."
+---
+
+AI provider plugins perform the two-pass summarization at the heart of narratorlog. **Pass 1** calls `summarize` once per commit group, producing a 2–3 sentence technical summary. **Pass 2** calls `generate` once per audience, passing all of the Pass 1 summaries together to produce the full audience-specific changelog draft. Separating these two passes keeps prompts focused and keeps token costs predictable — the summarize call is small and repeatable, while the generate call has everything it needs in a single context window.
+
+## Built-in AI provider plugins
+
+<CardGroup cols={2}>
+  <Card title="anthropic" icon="sparkles" href="https://github.com/qShipyard/narratorlog/tree/main/plugins/ai-providers">
+    Calls Anthropic's Messages API. Supports `claude-3-5-sonnet`, `claude-opus-4-5`, and other Claude models. Configure your model in **Settings → AI**.
+  </Card>
+  <Card title="openai" icon="sparkles" href="https://github.com/qShipyard/narratorlog/tree/main/plugins/ai-providers">
+    Calls OpenAI's Chat Completions API. Supports `gpt-4o` and `gpt-4o-mini`. Set `base_url` in your config to point at any OpenAI-compatible endpoint.
+  </Card>
+  <Card title="ollama" icon="server" href="https://github.com/qShipyard/narratorlog/tree/main/plugins/ai-providers">
+    Calls a locally-running Ollama instance. Zero data leaves your machine. Point `base_url` at your Ollama server (default: `http://localhost:11434`).
+  </Card>
+  <Card title="groq" icon="bolt" href="https://github.com/qShipyard/narratorlog/tree/main/plugins/ai-providers">
+    Calls Groq's API for fast inference. Supports `llama-3.1-70b-versatile` and other models hosted on Groq's platform.
+  </Card>
+</CardGroup>
+
+## The AIProviderPlugin interface
+
+Implement the `AIProviderPlugin` interface by providing both `summarize` (Pass 1) and `generate` (Pass 2):
+
+```typescript
+import { AIProviderPlugin, SummarizeRequest, SummarizeResponse,
+         GenerateRequest, GenerateResponse } from '@narratorlog/sdk'
+
+export class MyAIPlugin implements AIProviderPlugin {
+  async summarize(request: SummarizeRequest): Promise<SummarizeResponse> {
+    // Pass 1: summarize one commit group into 2-3 sentences
+  }
+
+  async generate(request: GenerateRequest): Promise<GenerateResponse> {
+    // Pass 2: generate full audience draft from chunk summaries
+  }
+}
+```
+
+### SummarizeRequest and SummarizeResponse
+
+```typescript
+interface CommitGroupContext {
+  label: string
+  group_type: 'feature' | 'fix' | 'breaking' | 'chore' | 'security' | 'other'
+  pr_title?: string
+  pr_description?: string
+  issue_titles: string[]
+  changed_files: string[]
+  diff?: string
+  codebase_context?: string
+}
+
+interface SummarizeRequest {
+  action: 'summarize'
+  group: CommitGroupContext
+  model: string
+  api_key?: string              // if cloud provider
+  base_url?: string             // if Ollama or custom endpoint
+}
+
+interface SummarizeResponse {
+  summary: string               // 2-3 sentence technical summary
+  tokens_used?: number
+  error?: string
+}
+```
+
+### GenerateRequest and GenerateResponse
+
+```typescript
+interface Audience {
+  id: string                    // developers | product | marketing | etc.
+  tone: string
+  description?: string
+}
+
+interface GenerateRequest {
+  action: 'generate'
+  summaries: string[]           // Pass 1 summaries (one per commit group)
+  audience: Audience
+  repository: string            // for context
+  scan_from: string
+  scan_to: string
+  model: string
+  api_key?: string
+  base_url?: string
+}
+
+interface GenerateResponse {
+  content: string               // full formatted changelog draft
+  tokens_used?: number
+  error?: string
+}
+```
+
+## Example — Anthropic provider plugin
+
+```typescript
+import Anthropic from '@anthropic-ai/sdk'
+import { AIProviderPlugin, SummarizeRequest, SummarizeResponse,
+         GenerateRequest, GenerateResponse, runPlugin } from '@narratorlog/sdk'
+
+class AnthropicPlugin implements AIProviderPlugin {
+  async summarize(request: SummarizeRequest): Promise<SummarizeResponse> {
+    const client = new Anthropic({ apiKey: request.api_key })
+
+    const message = await client.messages.create({
+      model: request.model,
+      max_tokens: 300,
+      messages: [{
+        role: 'user',
+        content: this.buildSummarizePrompt(request.group)
+      }]
+    })
+
+    return {
+      summary: message.content[0].type === 'text' ? message.content[0].text : '',
+      tokens_used: message.usage.input_tokens + message.usage.output_tokens
+    }
+  }
+
+  async generate(request: GenerateRequest): Promise<GenerateResponse> {
+    const client = new Anthropic({ apiKey: request.api_key })
+
+    const message = await client.messages.create({
+      model: request.model,
+      max_tokens: 2000,
+      messages: [{
+        role: 'user',
+        content: this.buildGeneratePrompt(request)
+      }]
+    })
+
+    return {
+      content: message.content[0].type === 'text' ? message.content[0].text : '',
+      tokens_used: message.usage.input_tokens + message.usage.output_tokens
+    }
+  }
+
+  private buildSummarizePrompt(group): string {
+    return `You are a technical writer creating internal changelog entries.
+
+Summarize the following code change in 2-3 sentences.
+Be specific about what changed and why it matters.
+Do not use marketing language.
+
+Pull Request: ${group.pr_title || 'N/A'}
+Description: ${group.pr_description || 'N/A'}
+Linked Issues: ${group.issue_titles.join(', ') || 'None'}
+Changed Files: ${group.changed_files.join(', ')}
+${group.diff ? `Diff:\n${group.diff}` : ''}
+${group.codebase_context ? `Context:\n${group.codebase_context}` : ''}`
+  }
+
+  private buildGeneratePrompt(request: GenerateRequest): string {
+    return `You are writing a changelog for the ${request.audience.id} audience.
+
+Tone: ${request.audience.tone}
+Repository: ${request.repository}
+Period: ${request.scan_from} to ${request.scan_to}
+
+What shipped this week:
+${request.summaries.map((s, i) => `${i + 1}. ${s}`).join('\n')}
+
+Write the changelog now. Group by type (Features, Fixes, etc.).
+End with: "Generated by narratorlog · narratorlog.dev"`
+  }
+}
+
+runPlugin(new AnthropicPlugin())
+```
+
+## Using an OpenAI-compatible endpoint
+
+<Tip>
+  If you are using an OpenAI-compatible API — such as Azure OpenAI, a local vLLM server, or LM Studio — you do not need a custom AI plugin. Use the built-in `openai` plugin and set `base_url` in your `.narratorlog.yml` `ai` block to point at your endpoint:
+
+  ```yaml
+  ai:
+    provider: openai
+    model: your-deployment-name
+    base_url: https://your-endpoint.openai.azure.com/
+  ```
+
+  The `openai` plugin passes `base_url` through to the OpenAI SDK's `baseURL` option.
+</Tip>
+
+## Returning token usage
+
+Populate `tokens_used` in both `SummarizeResponse` and `GenerateResponse` whenever your provider makes the data available. narratorlog logs token usage per scan so you can track costs over time in **Settings → AI**.
+
+For the full implementation walkthrough, see [Build a Plugin](/plugins/building-a-plugin).

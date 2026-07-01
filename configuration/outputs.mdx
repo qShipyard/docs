@@ -1,0 +1,228 @@
+---
+title: "Configure Delivery Outputs in narratorlog"
+sidebarTitle: "Outputs"
+description: "Route approved changelogs to Slack, Notion, Discord, Linear, email, or a Markdown file. Each audience can have its own delivery destination."
+---
+
+Once all drafts for a scan are approved, narratorlog triggers the delivery stage. Each audience draft is delivered to its configured output plugin. You configure outputs per repository in `.narratorlog.yml` — one entry per audience, each pointing at a plugin.
+
+## Built-in output plugins
+
+narratorlog ships with six output plugins. You can also install community plugins from npm or [build your own](/plugins/output-plugins).
+
+| Plugin | Delivers to |
+|--------|-------------|
+| `slack` | Slack channel via Bot Token |
+| `notion` | Notion page (appends content) |
+| `discord` | Discord channel via Webhook URL |
+| `linear` | Linear document |
+| `email` | Email digest via SMTP or SendGrid |
+| `markdown` | Local `CHANGELOG.md` file |
+
+<Note>
+  Credentials (tokens, passwords, API keys) always go in environment variables, never in `.narratorlog.yml`. The config block in `.narratorlog.yml` contains only non-secret routing information — channel names, page IDs, file paths.
+</Note>
+
+---
+
+## Slack
+
+Posts an approved draft to a Slack channel using a Bot Token.
+
+**Required environment variable**
+
+| Variable | How to get it |
+|----------|--------------|
+| `SLACK_BOT_TOKEN` | Create a Slack app at [api.slack.com/apps](https://api.slack.com/apps). Add it to your workspace. Under **OAuth & Permissions**, add the `chat:write` scope. Install the app and copy the **Bot User OAuth Token** (`xoxb-...`). |
+
+**Config fields**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `channel` | string | Yes | The Slack channel to post to (e.g. `#engineering`). The bot must be a member of the channel. |
+| `mention` | string | No | A Slack mention to prepend to the message (e.g. `<!channel>`, `@here`, or a user ID). |
+
+**Example**
+
+```yaml
+outputs:
+  - audience: developers
+    plugin: slack
+    config:
+      channel: '#engineering'
+      mention: '<!channel>'
+```
+
+---
+
+## Notion
+
+Appends an approved draft to a Notion page using an internal integration token.
+
+**Required environment variable**
+
+| Variable | How to get it |
+|----------|--------------|
+| `NOTION_TOKEN` | Go to [notion.so/my-integrations](https://www.notion.so/my-integrations) → **New integration**. Copy the **Internal Integration Secret**. Then open the target Notion page → **...** menu → **Add connections** → select your integration to give it access. |
+
+**Config fields**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `page_id` | string | Yes | The UUID of the Notion page where content will be appended. Copy it from the page URL (the 32-character string after the last `/` and before `?`). |
+
+**Example**
+
+```yaml
+outputs:
+  - audience: product
+    plugin: notion
+    config:
+      page_id: 'abc123def456'
+```
+
+---
+
+## Discord
+
+Posts an approved draft to a Discord channel using a Webhook URL. No bot token or environment variable is required — the webhook URL is placed directly in the config.
+
+**Required environment variable**
+
+None. The webhook URL is stored in `config.webhook_url`.
+
+**Config fields**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `webhook_url` | string | Yes | The full Discord webhook URL. Get it from your server's **Server Settings → Integrations → Webhooks → New Webhook**. |
+
+**Example**
+
+```yaml
+outputs:
+  - audience: executives
+    plugin: discord
+    config:
+      webhook_url: 'https://discord.com/api/webhooks/...'
+```
+
+<Note>
+  The Discord webhook URL grants anyone with it the ability to post to your channel. Store it carefully. Consider using a dedicated channel for narratorlog deliveries.
+</Note>
+
+---
+
+## Email
+
+Sends an approved draft as an email digest via SMTP or SendGrid.
+
+**Required environment variables**
+
+For SMTP:
+
+| Variable | Description |
+|----------|-------------|
+| `SMTP_HOST` | SMTP server hostname (e.g. `smtp.mailgun.org`) |
+| `SMTP_PORT` | SMTP port (e.g. `587`) |
+| `SMTP_USER` | SMTP username |
+| `SMTP_PASS` | SMTP password |
+
+For SendGrid (alternative to SMTP):
+
+| Variable | Description |
+|----------|-------------|
+| `SENDGRID_API_KEY` | SendGrid API key from [app.sendgrid.com](https://app.sendgrid.com) → **Settings → API Keys** |
+
+**Config fields**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `to` | string or array | Yes | Recipient email address or list of addresses. |
+| `subject_prefix` | string | No | A string prepended to the email subject line (e.g. `[Weekly Shipping Update]`). |
+
+**Example**
+
+```yaml
+outputs:
+  - audience: marketing
+    plugin: email
+    config:
+      to: 'marketing@example.com'
+      subject_prefix: '[Weekly Shipping Update]'
+```
+
+Multiple recipients:
+
+```yaml
+outputs:
+  - audience: executives
+    plugin: email
+    config:
+      to:
+        - 'ceo@example.com'
+        - 'cto@example.com'
+      subject_prefix: '[Engineering Update]'
+```
+
+---
+
+## Markdown
+
+Writes an approved draft to a `CHANGELOG.md` file in the repository. New entries are prepended by default so the most recent release is always at the top.
+
+**Required environment variable**
+
+None.
+
+**Config fields**
+
+| Field | Type | Required | Default | Description |
+|-------|------|----------|---------|-------------|
+| `path` | string | Yes | — | Path to the changelog file, relative to the repo root (e.g. `./CHANGELOG.md`). |
+| `prepend` | boolean | No | `true` | When `true`, new entries are inserted at the top of the file. When `false`, entries are appended at the bottom. |
+
+**Example**
+
+```yaml
+outputs:
+  - audience: developers
+    plugin: markdown
+    config:
+      path: './CHANGELOG.md'
+      prepend: true
+```
+
+---
+
+## Send one audience to multiple destinations
+
+You can include multiple entries with the same `audience` value to deliver to more than one destination:
+
+```yaml
+outputs:
+  - audience: developers
+    plugin: slack
+    config:
+      channel: '#engineering'
+  - audience: developers
+    plugin: markdown
+    config:
+      path: './CHANGELOG.md'
+  - audience: marketing
+    plugin: notion
+    config:
+      page_id: 'abc123def456'
+  - audience: marketing
+    plugin: email
+    config:
+      to: 'marketing@example.com'
+```
+
+narratorlog delivers to all configured destinations for an audience as soon as that draft is approved. Failures in one destination do not prevent delivery to others — failed deliveries appear in the scan detail page with a retry option.
+
+---
+
+## Custom and community plugins
+
+For destinations not covered by the built-in plugins, see the [output plugins reference](/plugins/output-plugins). It covers how to install community plugins from npm and how to build your own output plugin using the `@narratorlog/sdk`.

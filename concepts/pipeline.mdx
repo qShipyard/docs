@@ -1,0 +1,182 @@
+---
+title: "The narratorlog 8-Stage Processing Pipeline"
+sidebarTitle: "Pipeline"
+description: "Learn how narratorlog's 8-stage pipeline transforms raw git commits into human-approved, audience-specific changelogs ready for delivery."
+---
+
+The narratorlog pipeline is a background job that runs every time a scan is triggered — by schedule, webhook, manual request, or CLI command. It takes raw git commits as input and produces human-approved, audience-specific changelog drafts as output. Stages 1–6 run automatically and without interruption. Stage 7 pauses and waits for your team to review and approve every draft. Stage 8 runs as soon as the last approval lands.
+
+```
+Stage 1  SCAN         Fetch raw commits from your git platform
+Stage 2  FILTER       Remove noise, bots, duplicates, lock-file-only commits
+Stage 3  ENRICH       Add PR/issue context, detect breaking changes, infer domain
+Stage 4  CONTEXT      Read surrounding codebase context (depth=deep only)
+Stage 5  CHUNK        Group commits into logical units by PR/domain
+Stage 6  SUMMARIZE    AI two-pass: chunk summaries → audience drafts (parallel)
+Stage 7  APPROVAL     Human review, edit, and approve in the web app ← PAUSE
+Stage 8  DELIVER      Send approved drafts via output plugins
+```
+
+<Note>
+  Real-time progress during Stages 1–6 is visible via WebSocket on the scan detail page. You can watch the pipeline move through each stage without refreshing.
+</Note>
+
+---
+
+### Stage 1 — SCAN
+
+narratorlog calls your configured source plugin (GitHub, GitLab, Bitbucket, or git CLI) to fetch all commits within the scan window. The window is determined by your cadence setting:
+
+- `weekly` → from last Monday 00:00 UTC to now
+- `on-tag` → from the previous tag to the current tag
+- `on-merge` → from the last scan's end time to now
+- `manual` → from the explicit `scan_from` / `scan_to` dates you provide, or a default 7-day lookback
+
+The source plugin runs as a subprocess and returns structured commit data, which narratorlog stores in the database. The scan record is updated with a raw `commit_count`.
+
+**Depth options** control how much information the source plugin collects per commit:
+
+| Depth | What is fetched |
+|-------|-----------------|
+| `messages-only` | Commit messages and PR descriptions only. No code leaves the machine beyond commit metadata. |
+| `standard` | Adds diffs for each changed file. More context, better AI summaries. |
+| `deep` | Adds surrounding codebase context via the Rust reader in Stage 4. Produces the richest summaries. |
+
+**If the source plugin fails**, narratorlog marks the scan as `failed` and retries up to 3 times with exponential backoff.
+
+---
+
+### Stage 2 — FILTER
+
+narratorlog removes commits that should not appear in a changelog. Filtered commits are flagged as `is_noise = true` in the database — they are never deleted, so you can always audit what was excluded and why.
+
+Built-in noise rules (applied in order):
+
+1. **Bot author detection** — matches author emails like `*[bot]@users.noreply.github.com` and known bot names: `dependabot`, `renovate`, `github-actions`, `snyk-bot`, `codecov`.
+2. **Message pattern matching** — built-in defaults match `^wip`, `^merge branch`, `^merge pull request`, `^fix typo`, `^fixup!`, and `^squash!`.
+3. **Deduplication** — commits whose SHA already appeared in a previous scan for the same repository are skipped to prevent overlap.
+4. **Empty or lock-file-only changes** — commits with no `changed_files`, or changes only to `package-lock.json`, `yarn.lock`, `go.sum`, or `Cargo.lock`.
+
+You can extend these rules in `.narratorlog.yml`:
+
+```yaml
+filter:
+  skip_authors:
+    - my-internal-bot
+  skip_patterns:
+    - "^chore: bump version"
+    - "^Revert"
+```
+
+---
+
+### Stage 3 — ENRICH
+
+narratorlog adds intent and context to each non-noise commit, running up to 10 enrichment requests concurrently. This stage is what separates a surface-level diff summary from a meaningful changelog entry.
+
+Enrichment covers:
+
+- **PR resolution** — fetches the full PR title, description, labels, and review comments from the platform API.
+- **Issue resolution** — parses `Closes #123`, `Fixes #123`, and `Refs #123` patterns from PR descriptions and commit messages, then fetches each referenced issue's title and body.
+- **Breaking change detection** — checks for `BREAKING CHANGE:` footer (Conventional Commits spec), `feat!:` / `fix!:` message prefixes, and `breaking-change` PR labels. Sets `is_breaking = true` on matching commits.
+- **Domain inference** — maps changed file paths to logical codebase domains. For example, `internal/auth/**` → `auth`, `apps/web/**` → `frontend`, `deploy/**` → `infrastructure`. These domains drive grouping in Stage 5 and section headings in your changelog.
+- **Author attribution** — preserves author names for contribution credit in developer-facing drafts.
+
+---
+
+### Stage 4 — CONTEXT
+
+The Rust reader sidecar extracts surrounding code context for every changed function in every changed file. This gives the AI a richer understanding of what a change actually does in your system — not just which lines were added or removed.
+
+<Note>
+  Stage 4 only runs when `ai.depth` is set to `deep` in your config. Standard scans skip this stage entirely and still produce high-quality output.
+</Note>
+
+For each changed file, narratorlog sends a read request to the Rust reader over a Unix socket. The reader parses the file's AST, identifies which functions were touched by the diff, extracts N lines of surrounding context per function (configurable via `ai.context_lines`), and resolves one level of imports. The context is stored in the database and included in the AI prompt at Stage 6.
+
+**If the reader is unavailable** or cannot parse a file, narratorlog skips context for that file and continues. Stage 4 is an enhancement — the pipeline never fails because of a missing context response.
+
+<Warning>
+  When using `depth: deep`, actual source code is included in the request sent to your AI provider. narratorlog scrubs secrets from diffs before transmission and shows you a privacy summary on first use. If you want deep mode with no data leaving your infrastructure, pair it with a local Ollama provider.
+</Warning>
+
+---
+
+### Stage 5 — CHUNK
+
+narratorlog groups related commits into logical units called **commit groups**. These groups — not individual commits — are what the AI summarizes in Stage 6. Grouping reduces noise and produces changelog entries that correspond to meaningful units of work.
+
+Grouping strategy (applied in priority order):
+
+1. **By pull request** — all commits sharing a `pr_number` form one group. The group label is the PR title. This is the highest-signal grouping and the preferred outcome.
+2. **By domain** — commits without a PR are grouped by their inferred domain from Stage 3. The group label is the domain name plus the date range.
+3. **Singleton** — commits that don't fit either pattern become their own group, with the first 72 characters of the commit message as the label.
+
+Each group also receives a type: `feature`, `fix`, `breaking`, `security`, or `chore`, inferred from PR labels and commit message prefixes. These types drive section headings in the final changelog draft.
+
+---
+
+### Stage 6 — SUMMARIZE
+
+This is the AI stage. narratorlog runs two passes to stay within context window limits and produce high-quality, audience-specific output.
+
+**Pass 1 — Chunk summarization.** One AI call per commit group, all running in parallel. The prompt includes the PR title, description, linked issue context, changed files, and diff (or codebase context at depth=deep). The output is a 2–3 sentence technical summary stored against the group. This is the shared input for every audience draft.
+
+**Pass 2 — Audience generation.** One AI call per configured audience, all running in parallel. Each call receives the complete set of Pass 1 summaries and the audience's `id`, `tone`, and `description`. The output is a full, publication-ready changelog draft.
+
+If an AI call fails, narratorlog retries once after 5 seconds. If the retry also fails, that draft is marked `failed` and shown in the web app with a regenerate option — the rest of the scan continues unaffected.
+
+---
+
+### Stage 7 — APPROVAL
+
+The pipeline pauses here. narratorlog updates the scan status to `awaiting_approval` and notifies your configured reviewers:
+
+- A notification badge and email goes to all reviewers in the web app.
+- If you have `approval.via: slack` configured, a message with a direct link to the review page is posted to your configured channel.
+- If you have `approval.via: email` configured, a digest email goes to configured reviewers.
+
+In the review UI at `/scans/:id/review`, reviewers can read each draft, leave comments, make inline edits, and either approve or reject the draft. Rejecting with `regenerate: true` queues a new Pass 2 AI call for that audience immediately.
+
+**Nothing is delivered until every configured audience has an approved draft.** You can approve audiences one at a time as different reviewers sign off.
+
+You can configure a timeout in your `.narratorlog.yml`:
+
+```yaml
+approval:
+  required: true
+  timeout: 24h   # auto-approve pending drafts after 24 hours; use "never" to always require manual approval
+```
+
+Auto-approved drafts are recorded in the audit log with `approved_by = null`.
+
+---
+
+### Stage 8 — DELIVER
+
+Once the last audience draft is approved, narratorlog enqueues a delivery job automatically. For each approved draft, the worker determines which output plugin handles that audience, calls the plugin, and records the result — including the delivery reference (a Slack message URL, a Notion page link, etc.) — in the `deliveries` table.
+
+Each output plugin is called as a subprocess. If a plugin call fails, narratorlog retries up to 3 times with exponential backoff. If one plugin fails after retries but others succeed, the scan is still marked `delivered` — failed deliveries are surfaced in the web app with a manual retry option and do not revert any approvals.
+
+---
+
+## Scan status lifecycle
+
+A scan moves through the following states from creation to completion:
+
+```
+pending
+  → running           Worker picks up the job and starts Stage 1
+  → filtering         Stage 2 in progress
+  → enriching         Stage 3 in progress
+  → reading_context   Stage 4 in progress (depth=deep only)
+  → chunking          Stage 5 in progress
+  → summarizing       Stage 6 in progress
+  → awaiting_approval Stage 7 — waiting for human review
+  → delivering        Stage 8 triggered, delivery in progress
+  → delivered         All deliveries completed successfully
+  → failed            An unrecoverable error occurred
+  → cancelled         Manually cancelled by a team member
+```
+
+Every state transition is recorded in the audit log.

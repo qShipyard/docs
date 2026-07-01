@@ -1,0 +1,302 @@
+---
+title: "Drafts API — Review, Approve, and Deliver Changelogs"
+sidebarTitle: "Drafts"
+description: "REST endpoints for retrieving audience drafts, editing content, approving or rejecting drafts, triggering AI regeneration, and delivering to outputs."
+---
+
+Audience drafts are generated at stage 6 of the pipeline. Each scan produces one draft per configured audience (e.g. `developers`, `product`, `marketing`), tailored in tone and content for that audience. Use these endpoints to retrieve drafts, make edits, approve or reject them, and trigger delivery once all drafts are approved.
+
+<Note>
+  Approving and editing drafts requires the `reviewer` or `admin` role. Delivery and configuration changes require `admin`.
+</Note>
+
+## Draft Status Lifecycle
+
+| Status | Description |
+|--------|-------------|
+| `draft` | Generated and awaiting review |
+| `approved` | Approved by a reviewer or admin |
+| `rejected` | Rejected; may be queued for regeneration |
+| `regenerating` | AI is producing a new version |
+
+---
+
+### GET /api/v1/scans/:id/drafts
+
+Retrieve all audience drafts for a scan. Each draft includes the AI-generated content, any edits made by a reviewer, and the current approval status.
+
+**Example request:**
+
+```shell
+curl https://your-instance.com/api/v1/scans/uuid/drafts \
+  -b cookies.txt
+```
+
+**Response 200:**
+
+```json
+{
+  "data": [
+    {
+      "id": "uuid",
+      "audience_id": "developers",
+      "tone": "technical",
+      "content": "## Week of June 14–21, 2026\n\n### Features\n...",
+      "edited_content": null,
+      "status": "draft",
+      "approved_by": null,
+      "approved_at": null,
+      "comment_count": 2,
+      "created_at": "2026-06-21T09:04:00Z"
+    }
+  ]
+}
+```
+
+<ResponseField name="audience_id" type="string">
+  The audience identifier this draft targets, e.g. `developers`, `product`, `marketing`.
+</ResponseField>
+
+<ResponseField name="tone" type="string">
+  The tone used when generating this draft, e.g. `technical`, `business`, `friendly`.
+</ResponseField>
+
+<ResponseField name="content" type="string">
+  The original AI-generated Markdown content.
+</ResponseField>
+
+<ResponseField name="edited_content" type="string | null">
+  Reviewer edits applied on top of the original content. `null` if no edits have been made. When non-null, this is the content that gets delivered.
+</ResponseField>
+
+<ResponseField name="comment_count" type="integer">
+  Number of inline comments on this draft.
+</ResponseField>
+
+---
+
+### PATCH /api/v1/drafts/:id
+
+Edit the content of a draft. Only users with the `reviewer` or `admin` role can edit drafts. Your edits are stored in `edited_content` and will be used in place of the original `content` at delivery time.
+
+<ParamField body="edited_content" type="string" required>
+  The revised Markdown content to save. This replaces the current `edited_content` value.
+</ParamField>
+
+**Example request:**
+
+```shell
+curl -X PATCH https://your-instance.com/api/v1/drafts/uuid \
+  -b cookies.txt \
+  -H "Content-Type: application/json" \
+  -d '{
+    "edited_content": "## Week of June 14–21\n\n..."
+  }'
+```
+
+```json
+{
+  "edited_content": "## Week of June 14–21\n\n..."
+}
+```
+
+**Response 200:** The updated draft object.
+
+---
+
+### POST /api/v1/drafts/:id/approve
+
+Approve a draft. Requires `reviewer` or `admin` role. You can optionally include a note that is stored with the approval.
+
+<ParamField body="note" type="string">
+  An optional approval note visible to other team members.
+</ParamField>
+
+**Example request:**
+
+```shell
+curl -X POST https://your-instance.com/api/v1/drafts/uuid/approve \
+  -b cookies.txt \
+  -H "Content-Type: application/json" \
+  -d '{ "note": "Looks good, approved for delivery." }'
+```
+
+```json
+{ "note": "Looks good, approved for delivery." }
+```
+
+**Response 200:**
+
+```json
+{
+  "id": "uuid",
+  "status": "approved",
+  "approved_by": {
+    "id": "uuid",
+    "name": "Sarah Chen"
+  },
+  "approved_at": "2026-06-21T11:30:00Z",
+  "all_approved": false
+}
+```
+
+<ResponseField name="all_approved" type="boolean">
+  `true` if every draft in the scan is now approved. When this is `true`, narratorlog automatically enqueues the delivery job — you do **not** need to call `POST /api/v1/scans/:id/deliver` separately.
+</ResponseField>
+
+<Tip>
+  Check `all_approved` in the response. If it is `true`, delivery has already been enqueued and your changelogs are on their way to the configured outputs.
+</Tip>
+
+---
+
+### POST /api/v1/drafts/:id/reject
+
+Reject a draft and optionally queue it for immediate AI regeneration. Rejecting a draft sets its status to `rejected` and records your reason.
+
+<ParamField body="reason" type="string" required>
+  A description of why the draft was rejected. This is visible to other reviewers.
+</ParamField>
+
+<ParamField body="regenerate" type="boolean">
+  Set to `true` to immediately queue a new AI-generated draft. Default: `false`.
+</ParamField>
+
+**Example request:**
+
+```shell
+curl -X POST https://your-instance.com/api/v1/drafts/uuid/reject \
+  -b cookies.txt \
+  -H "Content-Type: application/json" \
+  -d '{
+    "reason": "Tone is too technical for marketing audience.",
+    "regenerate": true
+  }'
+```
+
+```json
+{
+  "reason": "Tone is too technical for marketing audience.",
+  "regenerate": true
+}
+```
+
+**Response 200:** The updated draft object with `status: "rejected"`. If `regenerate` was `true`, a new draft is queued immediately and will replace this one when complete.
+
+---
+
+### POST /api/v1/drafts/:id/regenerate
+
+Trigger AI regeneration of a specific draft without going through the full reject flow. This is useful when a draft looks off but you don't want to formally reject it first.
+
+**Example request:**
+
+```shell
+curl -X POST https://your-instance.com/api/v1/drafts/uuid/regenerate \
+  -b cookies.txt
+```
+
+**Response 202:**
+
+```json
+{ "message": "Regeneration queued." }
+```
+
+<Note>
+  Regeneration replaces the existing draft content once complete. If the draft has already been approved, regeneration resets its status to `draft`.
+</Note>
+
+---
+
+### POST /api/v1/scans/:id/deliver
+
+Manually trigger delivery of all approved drafts in a scan. All drafts must be in the `approved` state before calling this endpoint. If any draft is still `draft`, `rejected`, or `regenerating`, the request will fail.
+
+<Note>
+  You only need to call this endpoint if you want to trigger delivery manually. If you approved the last draft and `all_approved` returned `true` in the approval response, delivery was already enqueued automatically.
+</Note>
+
+**Example request:**
+
+```shell
+curl -X POST https://your-instance.com/api/v1/scans/uuid/deliver \
+  -b cookies.txt
+```
+
+**Response 202:**
+
+```json
+{ "message": "Delivery queued." }
+```
+
+---
+
+### GET /api/v1/drafts/:id/comments
+
+Retrieve all comments on a draft, sorted chronologically. Use comments to coordinate review discussion before approving or rejecting.
+
+**Example request:**
+
+```shell
+curl https://your-instance.com/api/v1/drafts/uuid/comments \
+  -b cookies.txt
+```
+
+**Response 200:**
+
+```json
+{
+  "data": [
+    {
+      "id": "uuid",
+      "user": {
+        "id": "uuid",
+        "name": "Sarah Chen",
+        "avatar_url": "..."
+      },
+      "content": "The second bullet point needs clarification.",
+      "created_at": "2026-06-21T10:15:00Z"
+    }
+  ]
+}
+```
+
+---
+
+### POST /api/v1/drafts/:id/comments
+
+Add a comment to a draft. Any authenticated team member can comment.
+
+<ParamField body="content" type="string" required>
+  The text content of the comment.
+</ParamField>
+
+**Example request:**
+
+```shell
+curl -X POST https://your-instance.com/api/v1/drafts/uuid/comments \
+  -b cookies.txt \
+  -H "Content-Type: application/json" \
+  -d '{ "content": "Can we rephrase the breaking change note?" }'
+```
+
+```json
+{ "content": "Can we rephrase the breaking change note?" }
+```
+
+**Response 201:** The created comment object.
+
+---
+
+### DELETE /api/v1/comments/:id
+
+Delete your own comment. You can only delete comments you authored. Admins cannot delete other users' comments via this endpoint.
+
+**Example request:**
+
+```shell
+curl -X DELETE https://your-instance.com/api/v1/comments/uuid \
+  -b cookies.txt
+```
+
+**Response 204:** No content.

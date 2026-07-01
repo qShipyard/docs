@@ -1,0 +1,96 @@
+---
+title: "Scan Cadence: When narratorlog Runs"
+sidebarTitle: "Scan Cadence"
+description: "Configure when narratorlog scans your repositories — on a weekly schedule, on every merge, on a new tag, or triggered manually from the dashboard or API."
+---
+
+A **scan** is the unit of work in narratorlog. Each scan covers a defined time window of commits, runs all 8 pipeline stages, and produces one set of audience drafts for review and delivery. **Cadence** controls when scans are triggered automatically — how often narratorlog goes looking for new commits to turn into a changelog.
+
+You configure cadence per repository in `.narratorlog.yml` under the `scan:` key.
+
+## Available cadence options
+
+| Cadence | Trigger | Scan window |
+|---------|---------|-------------|
+| `weekly` | Runs on a schedule (default: Monday 00:00 UTC) | Previous 7 days |
+| `on-merge` | Webhook fires when a PR is merged to the default branch | Since the end of the last scan |
+| `on-tag` | Webhook fires when a new tag is pushed | Since the previous tag |
+| `manual` | Triggered by you from the dashboard, API, or CLI | Configurable lookback window, or explicit date range |
+
+Set your cadence in `.narratorlog.yml`:
+
+```yaml
+scan:
+  provider: github
+  repo: org/my-repo
+  branch: main
+  cadence: weekly       # weekly | on-merge | on-tag | manual
+  lookback: 7d          # used when cadence is weekly or manual
+```
+
+## Webhook-based cadences (on-merge, on-tag)
+
+When you connect a repository to narratorlog, it automatically registers a webhook on your git platform. You don't need to configure anything on the GitHub, GitLab, or Bitbucket side — narratorlog handles registration when the repository is connected.
+
+Webhooks are received at:
+
+- `POST /webhooks/github`
+- `POST /webhooks/gitlab`
+- `POST /webhooks/bitbucket`
+
+Webhook payloads are verified with HMAC signature validation before narratorlog acts on them.
+
+With `cadence: on-merge`, narratorlog starts a new scan every time a pull request is merged to your configured branch. The scan window covers all commits since the last scan's end time, so nothing is missed or double-counted between runs.
+
+With `cadence: on-tag`, narratorlog starts a scan each time you push a new tag. The scan window covers commits between the previous tag and the new one — a natural fit for teams that tag every release.
+
+<Tip>
+  `on-merge` cadence is best for fast-moving teams shipping multiple times a day who want a changelog entry for every release. `weekly` is best for teams that want a single curated summary per week — one review, one delivery, one story.
+</Tip>
+
+## Manual scans
+
+You can trigger a scan at any time, for any repository, without changing your cadence setting.
+
+**From the dashboard:** Open any repository and click **New Scan**. narratorlog will prompt you for a lookback window (e.g. `7d`, `14d`, `30d`) or let you pick explicit start and end dates.
+
+**From the API:**
+
+```bash
+POST /api/v1/scans
+Content-Type: application/json
+
+{
+  "repository_id": "repo_abc123",
+  "lookback": "7d"
+}
+```
+
+**From the CLI:**
+
+```bash
+narratorlog generate
+```
+
+The CLI uses the same config file and pipeline engine as the web app.
+
+## Scan window
+
+For manual scans, you can set an explicit date range instead of a lookback period. Use `scan_from` and `scan_to` in the API request:
+
+```bash
+POST /api/v1/scans
+Content-Type: application/json
+
+{
+  "repository_id": "repo_abc123",
+  "scan_from": "2026-06-01T00:00:00Z",
+  "scan_to": "2026-06-30T23:59:59Z"
+}
+```
+
+An explicit `scan_from` / `scan_to` takes precedence over the `lookback` parameter if both are provided.
+
+<Note>
+  Scans for the same repository do not overlap. If a scan is already running or awaiting approval when a new trigger arrives, the new trigger is queued and starts as soon as the in-progress scan reaches `delivered` or `failed` status.
+</Note>

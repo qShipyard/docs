@@ -1,0 +1,203 @@
+---
+title: "Output Plugins: Deliver Changelogs to Any Destination"
+sidebarTitle: "Output Plugins"
+description: "Output plugins deliver approved changelog drafts to Slack, Notion, Discord, Linear, email, Markdown files, or any custom destination you build."
+---
+
+Output plugins run at stage 8 of the pipeline — after all drafts for a scan have been approved. Each audience–draft pair is routed to its configured output plugin, which delivers the content to the destination and returns a reference (URL or ID) so narratorlog can record where the content was sent. You can configure multiple output plugins for the same audience, and each one runs independently.
+
+## Built-in output plugins
+
+### slack
+
+Posts the approved draft to a Slack channel using the Slack Web API.
+
+**Required environment variable:** `SLACK_BOT_TOKEN`
+
+**Config fields:**
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `channel` | Yes | Channel name or ID (e.g. `#eng-updates` or `C01234`) |
+| `mention` | No | User or group to @-mention above the post (e.g. `@here`) |
+
+```yaml
+outputs:
+  - audience: developers
+    plugin: slack
+    config:
+      channel: "#eng-updates"
+      mention: "@here"
+```
+
+---
+
+### notion
+
+Appends the approved draft to an existing Notion page using the Notion API.
+
+**Required environment variable:** `NOTION_TOKEN`
+
+**Config fields:**
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `page_id` | Yes | The ID of the Notion page to append to |
+
+```yaml
+outputs:
+  - audience: product
+    plugin: notion
+    config:
+      page_id: "abc123def456"
+```
+
+---
+
+### discord
+
+Posts the approved draft to a Discord channel via an incoming webhook. No bot token or environment variable is required — the webhook URL contains the credentials.
+
+**Config fields:**
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `webhook_url` | Yes | The Discord channel webhook URL |
+
+```yaml
+outputs:
+  - audience: marketing
+    plugin: discord
+    config:
+      webhook_url: "https://discord.com/api/webhooks/..."
+```
+
+<Warning>
+  The Discord `webhook_url` contains a secret. Store it in an environment variable and reference it from your config, or use narratorlog's encrypted config storage rather than committing it to your repository.
+</Warning>
+
+---
+
+### linear
+
+Posts the approved draft as a document in a Linear team.
+
+**Required environment variable:** `LINEAR_API_KEY`
+
+**Config fields:**
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `team_id` | Yes | The Linear team ID to post the document under |
+
+```yaml
+outputs:
+  - audience: product
+    plugin: linear
+    config:
+      team_id: "TEAM-ID"
+```
+
+---
+
+### email
+
+Sends the approved draft as an email digest via SMTP.
+
+**Required environment variables:** `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`
+
+**Config fields:**
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `to` | Yes | Recipient email address or comma-separated list |
+| `subject_prefix` | No | Prepended to the subject line (default: `[narratorlog]`) |
+
+```yaml
+outputs:
+  - audience: executives
+    plugin: email
+    config:
+      to: "cto@example.com,ceo@example.com"
+      subject_prefix: "[Weekly Shipping Digest]"
+```
+
+---
+
+### markdown
+
+Writes the approved draft to a `CHANGELOG.md` file in your repository. No environment variables are required.
+
+**Config fields:**
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `path` | Yes | Path to the changelog file (e.g. `CHANGELOG.md`) |
+| `prepend` | No | When `true` (default), new entries are added at the top of the file |
+
+```yaml
+outputs:
+  - audience: developers
+    plugin: markdown
+    config:
+      path: CHANGELOG.md
+      prepend: true
+```
+
+---
+
+## The OutputPlugin interface
+
+Implement the `OutputPlugin` interface by providing a single `deliver` method:
+
+```typescript
+import { OutputPlugin, DeliverRequest, DeliverResponse } from '@narratorlog/sdk'
+
+export class MyOutputPlugin implements OutputPlugin {
+  async deliver(request: DeliverRequest): Promise<DeliverResponse> {
+    // deliver the content somewhere
+  }
+}
+```
+
+### DeliverRequest and DeliverResponse
+
+```typescript
+interface DeliverRequest {
+  action: 'deliver'
+  audience_id: string
+  tone: string
+  content: string               // original AI-generated content
+  edited_content?: string       // reviewer edits (use this if present)
+  scan: {
+    id: string
+    repository: string
+    scan_from: string
+    scan_to: string
+  }
+  config: Record<string, unknown>  // plugin-specific config from .narratorlog.yml
+}
+
+interface DeliverResponse {
+  success: boolean
+  reference?: string            // URL or ID of the delivered content
+  message?: string              // human-readable delivery summary
+  error?: string                // error message if success is false
+}
+```
+
+## The getFinalContent helper
+
+Always use `getFinalContent(request)` from the SDK when reading the draft content. It returns `edited_content` if a reviewer edited the draft in the approval UI, and falls back to the original AI-generated `content` otherwise. Skipping this helper means reviewer edits are silently ignored.
+
+```typescript
+import { getFinalContent } from '@narratorlog/sdk'
+
+const content = getFinalContent(request)  // edited_content ?? content
+```
+
+<Note>
+  Populate `reference` in your `DeliverResponse` whenever your destination returns a URL or identifier for the delivered content. narratorlog stores this reference and displays it in the scan history so your team can navigate directly to the published entry.
+</Note>
+
+For a complete implementation walkthrough, see [Build a Plugin](/plugins/building-a-plugin).

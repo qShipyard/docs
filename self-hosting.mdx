@@ -1,0 +1,156 @@
+---
+title: "Self-Host narratorlog with Docker Compose and nginx"
+sidebarTitle: "Self-Hosting"
+description: "Deploy narratorlog in production behind nginx with TLS. Covers environment setup, secrets generation, database migrations, and health verification."
+---
+
+This guide walks you through a production deployment of narratorlog on your own server. narratorlog ships as a Docker Compose stack — a Go API and background worker, a Next.js web app, a Rust codebase reader, PostgreSQL, and Redis. You bring the server, the domain, and the TLS certificate. Everything else runs in containers.
+
+<Note>
+  If you just want to try narratorlog locally before committing to a production setup, see the [Quickstart](/quickstart). One command, no configuration required.
+</Note>
+
+## Prerequisites
+
+- Docker and Docker Compose (Compose v2 or later)
+- A domain name with DNS pointed at your server
+- An SSL certificate for that domain (issued by Let's Encrypt, your CA, or self-signed for internal use)
+- An nginx installation on your server to terminate TLS and proxy to the stack
+
+## Steps
+
+<Steps>
+  <Step title="Clone the repository">
+    SSH into your server and clone the narratorlog repository:
+
+    ```shell
+    git clone https://github.com/qShipyard/narratorlog.git
+    cd narratorlog
+    ```
+  </Step>
+
+  <Step title="Copy the environment file">
+    The production Compose file reads all configuration from a `.env` file at the repo root. Copy the provided example to get started:
+
+    ```shell
+    cp deploy/.env.example .env
+    ```
+
+    Open `.env` in your editor. Every value must be filled in before you start the stack.
+  </Step>
+
+  <Step title="Generate secrets and fill in required values">
+    The two most critical values are `APP_SECRET` and `ENCRYPTION_KEY`. Generate them with:
+
+    ```shell
+    openssl rand -hex 32  # run this twice — one output for APP_SECRET, one for ENCRYPTION_KEY
+    ```
+
+    Set your domain and other required values in `.env`:
+
+    ```shell
+    APP_URL=https://your-domain.com
+    APP_SECRET=<first openssl output>
+    ENCRYPTION_KEY=<second openssl output>
+    DATABASE_URL=postgresql://narratorlog:<your-db-password>@postgres:5432/narratorlog?sslmode=disable
+    ```
+
+    <Warning>
+      `APP_SECRET` and `ENCRYPTION_KEY` **must be the same values** in both the API service and the worker service. If `ENCRYPTION_KEY` differs between the two, the worker will fail to decrypt stored credentials silently — scans will appear to run but will fail to authenticate with your git providers or AI providers. Double-check that both services share the same `.env` file or that both environment variables are set identically in each service.
+    </Warning>
+  </Step>
+
+  <Step title="Apply database migrations">
+    Run the bundled `migrate` service to apply all database migrations against the `postgres` service. This reads `DATABASE_URL` from your `.env`:
+
+    ```shell
+    docker compose -f deploy/docker-compose.yml run --rm migrate
+    ```
+
+    Migrations are safe to re-run — the migrate tool tracks which have already been applied and skips them.
+  </Step>
+
+  <Step title="Start the stack">
+    Bring the full stack up in detached mode:
+
+    ```shell
+    docker compose -f deploy/docker-compose.yml up -d
+    ```
+
+    Follow the logs to confirm all services start cleanly:
+
+    ```shell
+    docker compose -f deploy/docker-compose.yml logs -f
+    ```
+  </Step>
+
+  <Step title="Verify the deployment">
+    Once the stack is up, hit the health endpoint to confirm the API is responding:
+
+    ```shell
+    curl https://your-domain.com/health
+    # {"status":"ok","version":"0.1.0"}
+    ```
+
+    If the health check returns a non-200 response or times out, check the API logs:
+
+    ```shell
+    docker compose -f deploy/docker-compose.yml logs api
+    ```
+  </Step>
+
+  <Step title="Complete first-run setup in the browser">
+    Open your domain in a browser. On a fresh database, narratorlog redirects you to `/setup` to create your workspace and admin account.
+
+    After setup, you are sent to `/activate` to connect your git provider, configure your AI provider, and connect your first repository. On future visits, sign in at `/login`.
+  </Step>
+</Steps>
+
+## First-run setup
+
+The first-run wizard runs in two stages:
+
+- **`/setup`** — creates the workspace (your narratorlog instance name) and the initial admin account (email and password). This runs once on a fresh database.
+- **`/activate`** — connects your git provider via Personal Access Token (GitHub, GitLab, or Bitbucket — no OAuth app required), sets your AI provider API key, and connects your first repository.
+
+After activation, all further configuration — additional repos, team members, delivery channels, privacy settings — lives under **Settings** in the web app.
+
+## The Rust reader
+
+The Rust codebase reader (`packages/reader`) provides deep codebase context: for each changed function, it extracts surrounding code and resolves one level of imports before passing the context to your AI provider.
+
+The reader is **only required when your AI depth is set to `deep`**. Standard scans (`messages-only` and `standard` depth) run the full pipeline without it. If you are not using deep mode, the reader container can be left idle without affecting anything.
+
+Teams using Ollama as their AI provider can run deep mode with the Rust reader enabled and have zero code leave their own infrastructure.
+
+## Keeping narratorlog up to date
+
+Pull the latest images and restart the stack:
+
+```shell
+docker compose -f deploy/docker-compose.yml pull
+docker compose -f deploy/docker-compose.yml up -d
+```
+
+Run migrations after each update to apply any new schema changes:
+
+```shell
+docker compose -f deploy/docker-compose.yml run --rm migrate
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="narratorlog.yml" icon="file-code" href="/configuration/narratorlog-yml">
+    Configure scan cadence, AI depth, audiences, and skip patterns per repository.
+  </Card>
+  <Card title="AI Providers" icon="microchip" href="/configuration/ai-providers">
+    Connect Anthropic, OpenAI, Ollama, or a custom LLM endpoint.
+  </Card>
+  <Card title="Sources" icon="code-branch" href="/configuration/sources">
+    Manage GitHub, GitLab, and Bitbucket connections and per-repo settings.
+  </Card>
+  <Card title="Outputs" icon="paper-plane" href="/configuration/outputs">
+    Configure Slack, Notion, Discord, Linear, email, and custom webhook delivery.
+  </Card>
+</CardGroup>

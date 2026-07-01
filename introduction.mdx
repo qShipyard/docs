@@ -1,0 +1,74 @@
+---
+title: "narratorlog: Self-Hosted Engineering Communication Tool"
+sidebarTitle: "Introduction"
+description: "Self-hosted changelog tool: reads git commits and delivers drafts to developers, product, marketing, and executives with human approval before publishing."
+---
+
+narratorlog is a self-hosted, open-source engineering communication tool that reads your git commits, understands them in the context of your codebase, and delivers the right story to every audience — automatically, and always with human approval before anything is published. You run it on your own infrastructure. Your code, your data, your control.
+
+## The problem it solves
+
+Engineering teams ship code every day. But the story of what they built rarely reaches the people who need to hear it — and when it does, it arrives too late, in the wrong language, or not at all.
+
+This creates a communication gap that costs teams in real, measurable ways:
+
+- **Product managers** chase engineers every Friday asking "what shipped this week?" and get a wall of commit hashes or a vague summary that took 30 minutes to write.
+- **Marketing teams** find out about new features weeks after launch — too late to prepare copy, write announcements, or capitalise on momentum.
+- **Engineering managers** have no clear picture of shipping velocity, which areas of the codebase are moving, or whether the last sprint was mostly features or maintenance.
+- **Executives** read raw changelogs they cannot interpret, or rely on secondhand summaries that lose important detail.
+- **Engineers themselves** spend time writing summaries and release notes that duplicate effort already captured in their commits and pull requests.
+
+The root cause is a translation problem. Engineering work is captured in the language of code — commits, diffs, pull requests, linked issues. The rest of the organisation operates in different languages: features, benefits, decisions, velocity signals. narratorlog is the translation layer that sits between them.
+
+## Who it's for
+
+narratorlog produces a different output for each audience from a single scan. Every output goes through a human approval step before delivery.
+
+| Audience | What they get |
+|---|---|
+| **Developers** | A technical summary of what changed, what might break, and what to review |
+| **Engineering Managers** | Plain-English shipping signal — velocity, areas of activity, blockers resolved |
+| **Product Managers** | A feature-oriented breakdown of what moved and what is ready to demo |
+| **Marketing** | Benefit-focused copy with no jargon, ready to use in announcements |
+| **Executives** | A high-level narrative of what the team is building and shipping |
+
+## How narratorlog is different
+
+**Self-hosted, always.** narratorlog runs on your infrastructure. Nothing is sent anywhere you have not explicitly configured. There is no SaaS version, no phone-home, and no vendor dependency beyond your chosen AI provider.
+
+**Bring your own AI.** narratorlog is AI-provider agnostic. Connect your own Anthropic, OpenAI, Ollama, Groq, or custom LLM endpoint. For teams that use Ollama, zero data leaves your machine — even in deep scan mode.
+
+**A plugin system built for extension.** Sources, AI providers, and output destinations are all plugins. Writing an output plugin requires only TypeScript. The plugin interface is stable and versioned.
+
+**Human approval before anything ships.** AI generates drafts. You review, edit, and approve them. Nothing reaches an audience without explicit sign-off from a human on your team.
+
+## Current status
+
+narratorlog is working end to end. The Go pipeline, background worker, web app, and Docker setup are all implemented.
+
+- **Sources:** GitHub, GitLab, and Bitbucket — connect each with a Personal Access Token (no OAuth app needed)
+- **AI providers:** Anthropic Claude, OpenAI GPT-4o, and Ollama (Groq coming soon)
+- **Delivery:** Slack, Notion, Discord, Linear, and email
+
+## What's in these docs
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Run the full narratorlog stack locally with a single Docker Compose command and generate your first draft in minutes.
+  </Card>
+  <Card title="Self-Hosting" icon="server" href="/self-hosting">
+    Deploy narratorlog in production behind nginx with TLS using Docker Compose.
+  </Card>
+  <Card title="Core Concepts" icon="book-open" href="/concepts/how-it-works">
+    Understand how the pipeline works — from commit ingestion to audience-specific delivery.
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/overview">
+    Explore the REST API for building integrations and automating scans.
+  </Card>
+  <Card title="Plugins" icon="plug" href="/plugins/overview">
+    Learn how to build source, AI provider, and output plugins for narratorlog.
+  </Card>
+  <Card title="Configuration" icon="sliders" href="/configuration/narratorlog-yml">
+    Configure cadence, audiences, depth, and skip patterns in `.narratorlog.yml`.
+  </Card>
+</CardGroup>

@@ -1,0 +1,217 @@
+---
+title: "@narratorlog/sdk TypeScript Plugin SDK Reference"
+sidebarTitle: "SDK Reference"
+description: "Complete reference for @narratorlog/sdk — the TypeScript package for building narratorlog plugins. Covers all exported types, interfaces, and helper functions."
+---
+
+`@narratorlog/sdk` is the TypeScript package you use to build narratorlog plugins. It provides all shared types, base plugin interfaces, stdin/stdout handling, and helper utilities so you can focus on your plugin's logic rather than the communication plumbing.
+
+## Installation
+
+```shell
+npm install @narratorlog/sdk
+```
+
+## Exported interfaces
+
+Each plugin type implements one of three top-level interfaces. Choose the interface that matches the layer you're extending.
+
+### SourcePlugin
+
+Implement this interface to fetch raw commits from a git platform.
+
+```typescript
+interface SourcePlugin {
+  fetch(request: SourceRequest): Promise<SourceResponse>
+}
+```
+
+### AIProviderPlugin
+
+Implement this interface to call an LLM for commit summarization and audience draft generation. The pipeline calls `summarize` once per commit group (Pass 1), then calls `generate` once per audience with the collected summaries (Pass 2).
+
+```typescript
+interface AIProviderPlugin {
+  summarize(request: SummarizeRequest): Promise<SummarizeResponse>
+  generate(request: GenerateRequest): Promise<GenerateResponse>
+}
+```
+
+### OutputPlugin
+
+Implement this interface to deliver an approved draft to a destination such as Slack, Notion, or email.
+
+```typescript
+interface OutputPlugin {
+  deliver(request: DeliverRequest): Promise<DeliverResponse>
+}
+```
+
+## Request and response types
+
+### SourceRequest
+
+Passed to `SourcePlugin.fetch`. Describes the repository, time window, and access credentials for the fetch.
+
+```typescript
+interface SourceRequest {
+  provider: string              // 'github' | 'gitlab' | 'bitbucket' | 'git_cli'
+  repo: string                  // 'org/repo'
+  branch: string                // 'main' — used only for branch-centric fallback
+  scan_from: string             // ISO 8601 UTC
+  scan_to: string               // ISO 8601 UTC
+  access_token: string          // personal access token for the platform API
+  depth: 'messages-only' | 'standard' | 'deep'
+  base_url?: string             // self-hosted / enterprise API base
+  author_login?: string         // when set, scope to PRs this handle authored
+                                // (any base branch); the personal shipping log
+}
+```
+
+### RawCommit
+
+Returned inside `SourceResponse.commits`. Represents a single commit and its associated PR metadata.
+
+```typescript
+interface RawCommit {
+  sha: string
+  message: string
+  author_name: string
+  author_email: string
+  committed_at: string          // ISO 8601 UTC
+  pr_number?: number
+  pr_title?: string
+  pr_description?: string
+  pr_author_login?: string      // the PR author (for author-scoped provenance)
+  pr_base_branch?: string       // the branch the PR merged into
+  changed_files: string[]
+  diff?: string                 // only included if depth >= 'standard'
+}
+```
+
+### SourceResponse
+
+The return value from `SourcePlugin.fetch`.
+
+```typescript
+interface SourceResponse {
+  commits: RawCommit[]
+  error?: string
+}
+```
+
+### SummarizeRequest
+
+Passed to `AIProviderPlugin.summarize`. Contains a single commit group and the model configuration to use.
+
+```typescript
+interface SummarizeRequest {
+  action: 'summarize'
+  group: CommitGroupContext
+  model: string
+  api_key?: string              // if cloud provider
+  base_url?: string             // if Ollama or custom endpoint
+}
+```
+
+### SummarizeResponse
+
+The return value from `AIProviderPlugin.summarize`. The `summary` field feeds directly into the `GenerateRequest.summaries` array.
+
+```typescript
+interface SummarizeResponse {
+  summary: string               // 2-3 sentence technical summary
+  tokens_used?: number
+  error?: string
+}
+```
+
+### GenerateRequest
+
+Passed to `AIProviderPlugin.generate`. Contains the collected Pass 1 summaries and the target audience definition.
+
+```typescript
+interface GenerateRequest {
+  action: 'generate'
+  summaries: string[]           // Pass 1 summaries
+  audience: Audience
+  repository: string            // for context
+  scan_from: string
+  scan_to: string
+  model: string
+  api_key?: string
+  base_url?: string
+}
+```
+
+### GenerateResponse
+
+The return value from `AIProviderPlugin.generate`. The `content` field becomes the initial draft shown to reviewers.
+
+```typescript
+interface GenerateResponse {
+  content: string               // full formatted changelog draft
+  tokens_used?: number
+  error?: string
+}
+```
+
+### DeliverRequest
+
+Passed to `OutputPlugin.deliver`. Contains both the original AI-generated content and any reviewer edits, along with scan metadata and plugin-specific config.
+
+```typescript
+interface DeliverRequest {
+  action: 'deliver'
+  audience_id: string
+  tone: string
+  content: string               // original AI-generated content
+  edited_content?: string       // reviewer edits (use this if present)
+  scan: {
+    id: string
+    repository: string
+    scan_from: string
+    scan_to: string
+  }
+  config: Record<string, unknown>  // plugin-specific config from .narratorlog.yml
+}
+```
+
+### DeliverResponse
+
+The return value from `OutputPlugin.deliver`. Include a `reference` URL or ID whenever the delivery creates something linkable (e.g. a Slack message URL or Notion page ID).
+
+```typescript
+interface DeliverResponse {
+  success: boolean
+  reference?: string            // URL or ID of the delivered content
+  message?: string              // human-readable delivery summary
+  error?: string                // error message if success is false
+}
+```
+
+## Helper functions
+
+### runPlugin(plugin)
+
+Handles all stdin/stdout communication for you. Pass your plugin instance and the SDK reads the JSON request from stdin, calls the correct method on your plugin, and writes the JSON response to stdout. Every plugin entry point should call `runPlugin` as its last line.
+
+```typescript
+import { runPlugin } from '@narratorlog/sdk'
+
+runPlugin(new MyPlugin())
+```
+
+### getFinalContent(request)
+
+Returns `request.edited_content` if a reviewer edited the draft, otherwise returns `request.content`. Always use this helper in output plugins — never read `request.content` directly — so that reviewer edits are always respected.
+
+```typescript
+import { getFinalContent } from '@narratorlog/sdk'
+
+const content = getFinalContent(request)
+```
+
+## Plugin timeout
+
+The Go core terminates plugin subprocesses after **30 seconds**. Design your plugins to complete well within this window. Any long-running network calls — to Slack, Notion, an LLM API, or anywhere else — should have their own timeouts set to a value shorter than 30 seconds so that failures surface cleanly rather than causing a hard termination.

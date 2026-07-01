@@ -1,47 +1,115 @@
 ---
-title: "Quickstart"
-description: "Begin with a guide on the fastest path to a successful outcome"
+title: "Get Started with narratorlog in One Docker Command"
+sidebarTitle: "Quickstart"
+description: "Run narratorlog locally with one Docker Compose command, complete the setup wizard, and generate your first audience-specific changelog draft."
 ---
 
-Describe how someone begins using your product. What is the first thing they need to do? Are there any prerequisites?
+This guide gets you from zero to a working narratorlog instance on your local machine. You will clone the repo, start the full stack with one Docker Compose command, complete the setup wizard, connect a real repository, and generate your first audience-specific changelog draft — all without writing a line of configuration.
 
-A quickstart should take someone from zero to using your product. They'll get a quick win and a sense of what they can accomplish.
+<Note>
+  The quickstart uses insecure placeholder secrets and plain HTTP. It is designed for local trials only. Do not expose this stack to the internet or use it for a real team deployment. See [Self-Hosting](/self-hosting) when you are ready to go to production.
+</Note>
 
 ## Prerequisites
 
-Before you begin, you must have:
+- Docker running on your machine (Docker Desktop or Docker Engine with Compose v2)
 
-- Requirement one (for example, Node.js 18+, a free account, an API key)
-- Requirement two (for example, a compatible device, a compatible browser, a compatible operating system)
+That's it. No Go, Node, Rust, or any other runtime required.
 
-## Get started
+## Steps
 
 <Steps>
-  <Step title="Install">
-    Describe how to install your product or sign up.
+  <Step title="Clone the repo and start the stack">
+    Clone the narratorlog repository and run the quickstart Compose file from the repo root:
 
-    ```bash
-    npm install your-package
+    ```shell
+    git clone https://github.com/qShipyard/narratorlog.git
+    cd narratorlog
+    docker compose -f deploy/docker-compose.quickstart.yml up -d --build
     ```
+
+    The first run downloads base images and compiles the API, worker, web app, and Rust reader — expect **several minutes** before the stack is ready. Subsequent starts are much faster.
   </Step>
-  <Step title="Configure">
-    Describe any setup or configuration needed before first use.
 
-    ```bash
-    your-cli init
+  <Step title="Wait for the stack to become ready">
+    Follow the logs to watch all services come up:
+
+    ```shell
+    docker compose -f deploy/docker-compose.quickstart.yml logs -f
     ```
+
+    Once you see the web app and API reporting as ready, open [http://localhost:3000](http://localhost:3000) in your browser.
   </Step>
-  <Step title="Run it">
-    Show the first thing a user does to see it working.
 
-    ```bash
-    your-cli start
-    ```
+  <Step title="Complete the setup wizard at /setup">
+    On a fresh database, narratorlog automatically redirects you to `/setup`. The wizard walks you through two things:
+
+    1. **Create your workspace** — give your narratorlog instance a name
+    2. **Create your admin account** — set your email and password
+
+    This account becomes the owner of the workspace. You can invite additional team members later from the Team settings page.
+  </Step>
+
+  <Step title="Activate your instance at /activate">
+    After setup, you land on `/activate` to connect the tools narratorlog needs to generate its first draft:
+
+    1. **Connect your git provider** — paste a Personal Access Token for GitHub, GitLab, or Bitbucket. No OAuth app registration is required. The token needs read access to the repositories you want to scan.
+    2. **Set up your AI provider** — enter an API key for Anthropic, OpenAI, or point narratorlog at a local Ollama instance.
+    3. **Connect your first repository** — choose a repository from the list of repos your token can access.
+
+    Once activation is complete, you land on the dashboard.
+  </Step>
+
+  <Step title="Trigger your first scan">
+    From the dashboard, select your connected repository and click **Run scan** to trigger a manual scan. narratorlog will fetch recent commits, filter noise, group changes, and send them through the AI summarization pipeline.
+
+    The scan progress appears in the dashboard. For a repository with recent commit activity, a standard scan typically completes in under two minutes.
+  </Step>
+
+  <Step title="Review the generated drafts">
+    When the scan finishes, open the scan review page. You will see:
+
+    - **Left panel:** the commit groups narratorlog identified — what actually shipped, grouped by pull request or inferred domain
+    - **Right panel:** audience-specific drafts, tabbed by audience (developers, product, marketing, executives, and any others you configured)
+
+    Read through each draft. You can edit any draft directly in the UI before approving it.
+  </Step>
+
+  <Step title="Approve and deliver">
+    When you are satisfied with a draft, click **Approve**. Delivery is triggered automatically — the draft is sent to the output destinations you configured during activation (Slack channel, Notion page, email, and so on).
+
+    Any draft you do not approve stays in a pending state until you return to it.
   </Step>
 </Steps>
 
-<Tip>
-  Give people a way to get help. This could be a link to a support page, a chat with a customer support agent, or a forum for your product.
+## Useful Docker commands
 
-  Example: Need help? Reach out to us at [support@yourcompany.com](mailto:support@yourcompany.com).
-</Tip>
+```shell
+# Follow logs for all services
+docker compose -f deploy/docker-compose.quickstart.yml logs -f
+
+# Stop the stack (keeps your database intact)
+docker compose -f deploy/docker-compose.quickstart.yml down
+
+# Fresh start — wipes the database and runs first-run setup from scratch
+# Use this if migrations fail or you want a clean slate
+docker compose -f deploy/docker-compose.quickstart.yml down -v
+docker compose -f deploy/docker-compose.quickstart.yml up -d --build
+```
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Self-Hosting" icon="server" href="/self-hosting">
+    Deploy narratorlog in production behind nginx with TLS. Covers secrets generation, migrations, and health verification.
+  </Card>
+  <Card title="narratorlog.yml" icon="file-code" href="/configuration/narratorlog-yml">
+    Configure scan cadence, AI depth, audiences, skip patterns, and per-repository overrides.
+  </Card>
+  <Card title="AI Providers" icon="microchip" href="/configuration/ai-providers">
+    Configure Anthropic, OpenAI, Ollama, or a custom LLM endpoint as your AI provider.
+  </Card>
+  <Card title="Core Concepts" icon="book-open" href="/concepts/how-it-works">
+    Learn how the eight-stage pipeline turns raw commits into audience-specific drafts.
+  </Card>
+</CardGroup>

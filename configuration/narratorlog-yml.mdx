@@ -1,0 +1,151 @@
+---
+title: "Configure narratorlog with .narratorlog.yml"
+sidebarTitle: ".narratorlog.yml"
+description: "The .narratorlog.yml file controls how narratorlog scans your repositories, which AI provider to use, how to filter commits, and where to deliver approved drafts."
+---
+
+`.narratorlog.yml` lives at the root of your repository. narratorlog reads it when processing a scan. It controls scan behavior, AI provider selection, commit filtering, and output routing.
+
+## Full example
+
+Place this file at the root of any repository you connect to narratorlog. The comments explain every field.
+
+```yaml
+# .narratorlog.yml
+
+# Scan configuration
+scan:
+  branch: main              # branch to scan (default: repo default branch)
+  cadence: weekly           # weekly | on-merge | on-tag | manual
+  lookback: 7d              # used for manual scans and weekly cadence
+  ai_depth: standard        # messages-only | standard | deep
+  audiences:
+    - developers
+    - product
+    - marketing
+    - executives
+
+# Commit filtering
+filter:
+  skip_authors:
+    - dependabot
+    - renovate
+    - my-ci-bot
+  skip_patterns:
+    - '^wip'
+    - '^chore: bump version'
+    - '^docs: update changelog'
+
+# AI provider (must match a provider configured in Settings → AI)
+ai:
+  provider: anthropic       # anthropic | openai | ollama | groq | custom
+  model: claude-opus-4-5    # model name for the configured provider
+
+# Output routing — one entry per audience
+outputs:
+  - audience: developers
+    plugin: slack
+    config:
+      channel: '#engineering'
+  - audience: product
+    plugin: notion
+    config:
+      page_id: 'abc123'
+  - audience: marketing
+    plugin: email
+    config:
+      to: 'marketing@example.com'
+  - audience: executives
+    plugin: slack
+    config:
+      channel: '#leadership'
+```
+
+<Tip>
+  narratorlog dogfoods this — the narratorlog repository itself ships a `.narratorlog.yml` at its root.
+</Tip>
+
+<Note>
+  API keys and tokens are **never** stored in `.narratorlog.yml`. Store them in **Settings → AI** and **Settings → Sources** in the web UI. narratorlog encrypts them at rest on your instance.
+</Note>
+
+---
+
+## `scan`
+
+Controls what narratorlog fetches and how deeply it reads.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `branch` | string | repo default branch | The branch narratorlog scans for commits. |
+| `cadence` | `weekly` \| `on-merge` \| `on-tag` \| `manual` | `weekly` | When scans trigger automatically. `weekly` runs every Monday. `on-merge` triggers on every PR merge. `on-tag` triggers when a git tag is pushed. `manual` only runs when you explicitly trigger a scan. |
+| `lookback` | duration string | `7d` | How far back to look when `cadence` is `weekly` or `manual`. Accepts values like `7d`, `14d`, `30d`. |
+| `ai_depth` | `messages-only` \| `standard` \| `deep` | `standard` | How much context the AI receives per commit. See [AI depth](/configuration/ai-providers#ai-depth) for full details. |
+| `audiences` | array of strings | — | The audience IDs to generate drafts for. Each ID must match an audience configured in your instance (e.g. `developers`, `product`, `marketing`, `executives`). |
+
+---
+
+## `filter`
+
+Removes noise before the AI sees any commits. Filtered commits are marked in the database with `is_noise = true` — they are never deleted, so you can audit what was skipped.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `skip_authors` | array of strings | `[]` | Author names or email substrings to skip. narratorlog also skips well-known bot accounts automatically (dependabot, renovate, github-actions). Use this field to add your own CI bots. |
+| `skip_patterns` | array of strings | `[]` | Regular expressions matched against commit messages. Any commit whose message matches is filtered as noise. Patterns are applied in addition to narratorlog's built-in defaults (`^wip`, `^merge branch`, `^merge pull request`, `^fix typo`, `^fixup!`, `^squash!`). |
+
+**Example — filter a release bot and version-bump commits:**
+
+```yaml
+filter:
+  skip_authors:
+    - release-bot
+    - actions-user
+  skip_patterns:
+    - '^chore: bump version'
+    - '^ci:'
+    - '^build\(deps\)'
+```
+
+---
+
+## `ai`
+
+Selects the AI provider and model to use for this repository. The API key for the provider lives in **Settings → AI**, not here.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `provider` | string | — | The provider name as configured in Settings → AI. Must be one of `anthropic`, `openai`, `ollama`, `groq`, or `custom`. |
+| `model` | string | — | The model name to use with the selected provider (e.g. `claude-opus-4-5`, `gpt-4o`, `llama-3.1-70b-versatile`). |
+
+---
+
+## `outputs`
+
+Routes each audience's approved draft to a delivery destination. Each entry in the array maps one audience to one plugin.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `audience` | string | The audience ID this output handles. Must match an ID listed under `scan.audiences`. |
+| `plugin` | string | The output plugin to use. Accepts a built-in plugin name (e.g. `slack`, `notion`, `discord`, `linear`, `email`, `markdown`), a relative path to a local plugin (`./my-plugins/teams`), or an npm package name (`narratorlog-plugin-teams`). |
+| `config` | object | Plugin-specific configuration. The required fields depend on the plugin. See [Outputs](/configuration/outputs) for each plugin's config reference. |
+
+**Plugin resolution order:**
+
+1. Relative path (starts with `./`) — resolved from the repo root
+2. npm package name — resolved from `node_modules`
+3. Built-in name — resolved from narratorlog's bundled plugins
+
+You can send the same audience to multiple destinations by adding multiple entries with the same `audience` value:
+
+```yaml
+outputs:
+  - audience: developers
+    plugin: slack
+    config:
+      channel: '#engineering'
+  - audience: developers
+    plugin: markdown
+    config:
+      path: './CHANGELOG.md'
+```

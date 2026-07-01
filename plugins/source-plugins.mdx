@@ -1,0 +1,144 @@
+---
+title: "Source Plugins: Fetch Commits from Git Platforms"
+sidebarTitle: "Source Plugins"
+description: "Source plugins fetch raw commits from GitHub, GitLab, Bitbucket, or a local git repository. Learn the interface and how to use built-in and custom source plugins."
+---
+
+A source plugin is responsible for fetching raw commit data from a git platform within a given scan window. The Go core calls your source plugin with a `SourceRequest` describing the repository, time range, and scan depth — the plugin returns a list of `RawCommit` objects. narratorlog ships with built-in source plugins for GitHub, GitLab, Bitbucket, and local git repositories.
+
+## Built-in source plugins
+
+<CardGroup cols={2}>
+  <Card title="github" icon="github" href="https://github.com/qShipyard/narratorlog/tree/main/plugins/sources">
+    Uses the GitHub REST API. Fetches commits, resolves pull request metadata, and optionally retrieves diffs. Requires a GitHub Personal Access Token configured in **Settings → Sources**.
+  </Card>
+  <Card title="gitlab" icon="gitlab" href="https://github.com/qShipyard/narratorlog/tree/main/plugins/sources">
+    Uses the GitLab API (v4). Works with gitlab.com and self-hosted GitLab instances. Requires a Personal Access Token with `read_api` scope. Set `base_url` for self-hosted deployments.
+  </Card>
+  <Card title="bitbucket" icon="bitbucket" href="https://github.com/qShipyard/narratorlog/tree/main/plugins/sources">
+    Uses the Bitbucket Cloud API. Requires a Bitbucket App Password (not your account password) configured in **Settings → Sources**.
+  </Card>
+  <Card title="git-cli" icon="terminal" href="https://github.com/qShipyard/narratorlog/tree/main/plugins/sources">
+    Uses the local `git` CLI — no platform API needed. Useful for self-hosted git servers, air-gapped environments, or any repository accessible via the filesystem.
+  </Card>
+</CardGroup>
+
+## The SourcePlugin interface
+
+Implement the `SourcePlugin` interface by providing a single `fetch` method that accepts a `SourceRequest` and returns a `SourceResponse`:
+
+```typescript
+import { SourcePlugin, SourceRequest, SourceResponse } from '@narratorlog/sdk'
+
+export class MySourcePlugin implements SourcePlugin {
+  async fetch(request: SourceRequest): Promise<SourceResponse> {
+    // your implementation
+  }
+}
+```
+
+### SourceRequest
+
+```typescript
+interface SourceRequest {
+  provider: string              // 'github' | 'gitlab' | 'bitbucket' | 'git_cli'
+  repo: string                  // 'org/repo'
+  branch: string                // 'main' — used only for branch-centric fallback
+  scan_from: string             // ISO 8601 UTC
+  scan_to: string               // ISO 8601 UTC
+  access_token: string          // personal access token for the platform API
+  depth: 'messages-only' | 'standard' | 'deep'
+  base_url?: string             // self-hosted / enterprise API base
+  author_login?: string         // when set, scope to PRs this handle authored
+}
+```
+
+### SourceResponse
+
+```typescript
+interface RawCommit {
+  sha: string
+  message: string
+  author_name: string
+  author_email: string
+  committed_at: string          // ISO 8601 UTC
+  pr_number?: number
+  pr_title?: string
+  pr_description?: string
+  pr_author_login?: string      // the PR author (for author-scoped provenance)
+  pr_base_branch?: string       // the branch the PR merged into
+  changed_files: string[]
+  diff?: string                 // only included if depth >= 'standard'
+}
+
+interface SourceResponse {
+  commits: RawCommit[]
+  error?: string
+}
+```
+
+### The `author_login` field
+
+narratorlog is a **personal shipping log** — when you connect a source with a Personal Access Token, that token doubles as identity. When `author_login` is set on a request, your plugin should return commits from PRs that handle authored, merged into **any** base branch (not just the repo default). When `author_login` is absent, fall back to branch-centric listing — return all activity on the `branch` field within the scan window.
+
+The token owner's handle is resolved once when the token is saved (via the provider's authenticated-user endpoint) and stored on the source connection.
+
+<Tip>
+  Always check `author_login` before falling back to `branch`. The personal shipping log use case depends on getting the right commits regardless of which branch they landed on.
+</Tip>
+
+### The `depth` field
+
+The `depth` field controls how much data you fetch per commit:
+
+| Value | What to include |
+|-------|----------------|
+| `messages-only` | Commit message only — no diff, no PR body |
+| `standard` | Commit message + PR metadata + changed file list |
+| `deep` | Everything above + full diff content |
+
+Only populate `RawCommit.diff` when `depth` is `standard` or `deep`. Fetching diffs for every commit on `messages-only` depth wastes API quota and slows scans.
+
+## Example — GitHub source plugin
+
+The built-in GitHub plugin uses `@octokit/rest` to list commits and resolve pull request metadata:
+
+```typescript
+import { SourcePlugin, SourceRequest, SourceResponse, runPlugin } from '@narratorlog/sdk'
+import { Octokit } from '@octokit/rest'
+
+class GitHubSourcePlugin implements SourcePlugin {
+  async fetch(request: SourceRequest): Promise<SourceResponse> {
+    const octokit = new Octokit({ auth: request.access_token })
+    const [owner, repo] = request.repo.split('/')
+
+    const { data: commits } = await octokit.repos.listCommits({
+      owner,
+      repo,
+      sha: request.branch,
+      since: request.scan_from,
+      until: request.scan_to,
+      per_page: 100,
+    })
+
+    const rawCommits = await Promise.all(
+      commits.map(c => this.enrichCommit(octokit, owner, repo, c, request.depth))
+    )
+
+    return { commits: rawCommits }
+  }
+
+  private async enrichCommit(octokit, owner, repo, commit, depth) {
+    // fetch PR, diff, etc.
+  }
+}
+
+// SDK handles stdin/stdout
+runPlugin(new GitHubSourcePlugin())
+```
+
+<Note>
+  Call `runPlugin()` at the end of your entry file. The SDK reads the JSON request from stdin, calls your plugin's method, and writes the JSON response to stdout — you never handle the subprocess protocol directly.
+</Note>
+
+For a complete walkthrough of building a source plugin from scratch, see [Build a Plugin](/plugins/building-a-plugin).

@@ -1,0 +1,222 @@
+---
+title: "Build a Custom narratorlog Plugin"
+sidebarTitle: "Build a Plugin"
+description: "Build a custom output, source, or AI provider plugin for narratorlog using TypeScript and the @narratorlog/sdk. Scaffold, implement, test, and register your plugin."
+---
+
+You can extend narratorlog with custom plugins for any of the three plugin types — source, AI provider, or output. Plugins are TypeScript packages that implement typed interfaces from `@narratorlog/sdk`. The Go core communicates with them via subprocess JSON over stdin/stdout, so there is no special runtime, no RPC framework, and no daemon to manage. If your plugin reads from stdin and writes to stdout, it works.
+
+## Scaffold a plugin
+
+Use the CLI to scaffold a fully typed plugin from a template:
+
+```shell
+narratorlog create-plugin --type=output --name=teams
+```
+
+This creates the following structure under your repository:
+
+```
+plugins/outputs/teams/
+  index.ts          # plugin implementation (fill in deliver())
+  package.json      # npm package config
+  README.md         # how to configure this plugin
+  tsconfig.json
+```
+
+The generated `index.ts` already imports the correct interface and includes `runPlugin()` wired up — you only need to fill in the implementation.
+
+<Tip>
+  Replace `--type=output` with `--type=source` or `--type=ai` to scaffold the other plugin types.
+</Tip>
+
+## Install the SDK
+
+```shell
+npm install @narratorlog/sdk
+```
+
+The SDK provides all shared TypeScript types, the `runPlugin()` stdin/stdout handler, and helper utilities such as `getFinalContent`, secret scrubbing, and retry logic.
+
+## Communication protocol
+
+Understanding the protocol helps you write reliable plugins and debug them quickly.
+
+When narratorlog invokes a plugin, the Go core:
+
+1. Spawns the plugin as a Node.js subprocess
+2. Writes exactly **one** JSON request object to the process's **stdin**
+3. Reads exactly **one** JSON response object from the process's **stdout**
+4. Terminates the process
+
+Your plugin must follow these rules:
+
+- **MUST** read exactly one JSON object from stdin
+- **MUST** write exactly one JSON object to stdout
+- **MUST** exit with code `0` on success, non-zero on failure
+- **MUST NOT** write anything to stdout except the response JSON
+- **MAY** write debug logs to stderr — the Go core captures these at debug level
+- Plugin timeout is **30 seconds** (configurable per output in `.narratorlog.yml`)
+
+<Warning>
+  Any output written to stdout before the JSON response will corrupt the response and cause the plugin call to fail. Use `stderr` exclusively for logging.
+</Warning>
+
+Calling `runPlugin(new MyPlugin())` from the SDK handles all of this automatically. You should only implement the protocol manually if you are writing a plugin in a language other than TypeScript.
+
+## Example output plugin
+
+Here is a complete, working Slack output plugin. It demonstrates the full pattern: read config from `request.config`, read credentials from environment variables, use `getFinalContent` to respect reviewer edits, return a `reference` URL, and handle errors without throwing:
+
+```typescript
+import { OutputPlugin, DeliverRequest, DeliverResponse,
+         getFinalContent, runPlugin } from '@narratorlog/sdk'
+
+class SlackOutputPlugin implements OutputPlugin {
+  async deliver(request: DeliverRequest): Promise<DeliverResponse> {
+    try {
+      const content = getFinalContent(request)
+      const { channel, mention } = request.config as {
+        channel: string
+        mention?: string
+      }
+
+      const response = await fetch('https://slack.com/api/chat.postMessage', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${process.env.SLACK_BOT_TOKEN}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          channel,
+          text: mention ? `${mention}\n${content}` : content,
+          mrkdwn: true
+        })
+      })
+
+      const data = await response.json()
+
+      if (!data.ok) {
+        return { success: false, error: data.error }
+      }
+
+      return {
+        success: true,
+        reference: `https://slack.com/archives/${data.channel}/p${data.ts.replace('.', '')}`,
+        message: `Posted to ${channel}`
+      }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error)
+      }
+    }
+  }
+}
+
+runPlugin(new SlackOutputPlugin())
+```
+
+## Testing your plugin locally
+
+Because the protocol is plain JSON over stdin/stdout, you can test any plugin without running the full narratorlog stack:
+
+```shell
+echo '{"action":"deliver","audience_id":"developers","content":"## Week...","scan":{"id":"uuid","repository":"org/repo","scan_from":"2026-06-14T00:00:00Z","scan_to":"2026-06-21T00:00:00Z"},"config":{}}' \
+  | node plugins/outputs/teams/index.js
+```
+
+A successful plugin prints a single JSON object to stdout and exits with code 0:
+
+```json
+{
+  "success": true,
+  "reference": "https://...",
+  "message": "Posted to #eng-updates"
+}
+```
+
+If the plugin fails, it exits non-zero and the JSON response includes an `error` field.
+
+## Plugin registration in .narratorlog.yml
+
+Register your plugin under the relevant section in `.narratorlog.yml`:
+
+```yaml
+outputs:
+  - audience: developers
+    plugin: ./plugins/outputs/teams   # relative path from repo root
+    config:
+      webhook_url: https://...
+```
+
+**Plugin resolution order:**
+
+1. **Relative path** (`./`) — resolved from the repo root
+2. **npm package name** — resolved from `node_modules`
+3. **Built-in name** (e.g. `slack`) — resolved from narratorlog's bundled plugins
+
+You can also register source and AI provider plugins:
+
+```yaml
+source:
+  plugin: ./plugins/sources/my-forge   # custom source plugin
+
+ai:
+  provider: ./plugins/ai/my-llm        # custom AI provider plugin
+  model: my-model-name
+```
+
+## Best practices
+
+<Steps>
+  <Step title="Keep credentials in environment variables">
+    Never expect secrets in `request.config`. Read all tokens and API keys from environment variables and document them in your plugin's `README.md`.
+
+    ```typescript
+    // Good
+    const token = process.env.SLACK_BOT_TOKEN
+
+    // Bad — never do this
+    const token = request.config.token
+    ```
+  </Step>
+  <Step title="Catch all errors and return them in the response">
+    Never let an exception propagate unhandled. Wrap your entire `deliver` (or `fetch` / `summarize` / `generate`) body in a `try/catch` and return the error in the response object:
+
+    ```typescript
+    async deliver(request: DeliverRequest): Promise<DeliverResponse> {
+      try {
+        // implementation
+        return { success: true }
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : String(error)
+        }
+      }
+    }
+    ```
+  </Step>
+  <Step title="Always use getFinalContent for output plugins">
+    Call `getFinalContent(request)` from the SDK whenever you read the draft content. This returns `edited_content` if a reviewer made changes in the approval UI, falling back to the original `content`:
+
+    ```typescript
+    import { getFinalContent } from '@narratorlog/sdk'
+    const content = getFinalContent(request)  // edited_content ?? content
+    ```
+  </Step>
+  <Step title="Follow semantic versioning">
+    Publish your plugin to npm with a proper version. Breaking interface changes are versioned in the SDK itself — old plugins continue to work until a major SDK version bump. Pin your `@narratorlog/sdk` version in `package.json` to avoid unexpected breakage.
+  </Step>
+</Steps>
+
+## Share your plugin with the community
+
+Publish your plugin to npm, then open a pull request to add it to [`PLUGINS.md`](https://github.com/qShipyard/narratorlog/blob/main/PLUGINS.md) in the narratorlog repository. Each entry in the registry includes:
+
+- Plugin name and npm package
+- Supported plugin type (`source` / `ai` / `output`)
+- Brief description
+- Author and repository link
+- Required environment variables

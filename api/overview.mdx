@@ -1,0 +1,145 @@
+---
+title: "narratorlog REST API Reference Overview"
+sidebarTitle: "Overview"
+description: "The narratorlog API is a JSON REST API. Base URL is https://your-instance.com/api/v1. All requests use session cookies for authentication."
+---
+
+narratorlog exposes a JSON REST API served by the Go API service. All endpoints are under `https://your-instance.com/api/v1`. All requests and responses use JSON, all timestamps are ISO 8601 UTC, and all IDs are UUIDs.
+
+## Authentication
+
+narratorlog uses session-based authentication with HTTP-only secure cookies. There is no OAuth or API key system — you authenticate with email and password to receive a session cookie.
+
+The auth flow is:
+
+1. `POST /auth/login` with your email and password → the server sets an HTTP-only session cookie on success
+2. All subsequent `/api/v1/*` requests include the cookie automatically via your browser or HTTP client
+3. `GET /auth/me` to verify your session is active and inspect the current user
+
+<Note>
+  All `/api/v1/*` routes require a valid session cookie. Any unauthenticated request returns `401 Unauthorized`.
+</Note>
+
+Git providers are connected separately via a Personal Access Token in **Settings → Sources**. You do not connect your git platform through the auth endpoints.
+
+## Base URL
+
+Every API endpoint is relative to your instance's base URL:
+
+```
+https://your-instance.com/api/v1
+```
+
+Replace `your-instance.com` with the hostname of your self-hosted narratorlog deployment.
+
+## Standard Error Response
+
+All errors return a consistent JSON envelope regardless of status code:
+
+```json
+{
+  "error": {
+    "code": "REPO_NOT_FOUND",
+    "message": "Repository not found or you do not have access to it.",
+    "details": {}
+  }
+}
+```
+
+| Status | Meaning |
+|--------|---------|
+| 400 | Invalid request body or parameters |
+| 401 | Not authenticated |
+| 403 | Authenticated but not authorized |
+| 404 | Resource not found |
+| 409 | Conflict (duplicate resource) |
+| 422 | Validation error |
+| 500 | Internal server error |
+
+## Pagination
+
+List endpoints use cursor-based pagination. Pass `limit` and `cursor` as query parameters:
+
+```
+GET /api/v1/scans?limit=20&cursor=uuid
+```
+
+Every paginated response wraps its results in a `data` array alongside a `pagination` object:
+
+```json
+{
+  "data": [...],
+  "pagination": {
+    "next_cursor": "uuid-of-last-item",
+    "has_more": true,
+    "total": 142
+  }
+}
+```
+
+Pass `next_cursor` as the `cursor` parameter in your next request to fetch the following page. When `has_more` is `false`, you have reached the end of the result set.
+
+## WebSocket
+
+narratorlog exposes a WebSocket endpoint for real-time scan progress. Connect to it while a scan is running to receive live stage updates:
+
+```
+WS /ws/scans/:id
+```
+
+The server sends the following message types:
+
+```json
+{ "event": "stage_update", "stage": "enriching", "progress": 45 }
+{ "event": "stage_update", "stage": "summarizing", "progress": 80 }
+{ "event": "scan_complete", "status": "awaiting_approval" }
+{ "event": "scan_failed", "error": "AI provider returned 429" }
+```
+
+<Tip>
+  The narratorlog web app connects to this socket automatically when you open a scan detail page while a scan is in progress, giving you a live progress bar without polling.
+</Tip>
+
+## Health Check
+
+Use the health endpoint to verify that all services are running correctly:
+
+```
+GET /health
+```
+
+A healthy instance returns `200` with service statuses:
+
+```json
+{
+  "status": "ok",
+  "version": "1.2.0",
+  "services": {
+    "database": "ok",
+    "redis": "ok",
+    "reader": "ok"
+  }
+}
+```
+
+If any service is unhealthy, the endpoint returns `503` with the failing service marked in the `services` object.
+
+---
+
+<CardGroup cols={2}>
+  <Card title="Auth" href="/api/auth">
+    Login, logout, and session verification
+  </Card>
+  <Card title="Repositories" href="/api/repositories">
+    Connect and manage git repositories
+  </Card>
+  <Card title="Scans" href="/api/scans">
+    Trigger and monitor scan jobs
+  </Card>
+  <Card title="Drafts" href="/api/drafts">
+    Review, approve, and deliver changelogs
+  </Card>
+  <Card title="Team" href="/api/team">
+    Members, invitations, and roles
+  </Card>
+</CardGroup>

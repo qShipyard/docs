@@ -1,0 +1,159 @@
+---
+title: "Connect an AI Provider to narratorlog"
+sidebarTitle: "AI Providers"
+description: "narratorlog works with Anthropic Claude, OpenAI GPT-4o, Ollama (fully local), Groq, and custom HTTP endpoints. Connect your provider in Settings without leaving your instance."
+---
+
+narratorlog is bring-your-own-AI. You connect an AI provider in **Settings → AI**, and narratorlog uses it to generate commit summaries and audience-specific drafts. Keys are stored encrypted on your instance — they never leave it except to call the provider you configure.
+
+## Supported providers
+
+<CardGroup cols={2}>
+  <Card title="Anthropic Claude" href="https://console.anthropic.com">
+    API key from console.anthropic.com. Supports `claude-3-5-sonnet`, `claude-opus-4-5`, and all Claude models.
+  </Card>
+  <Card title="OpenAI GPT-4o" href="https://platform.openai.com">
+    API key from platform.openai.com. Supports `gpt-4o`, `gpt-4o-mini`, and compatible models.
+  </Card>
+  <Card title="Ollama (local)" href="https://ollama.com">
+    Points to your local Ollama instance (default `http://localhost:11434`). Zero data leaves your machine. Use any model from `ollama list`.
+  </Card>
+  <Card title="Groq" href="https://console.groq.com">
+    API key from console.groq.com. Fast inference. Supports `llama-3.1-70b-versatile` and other Groq-hosted models.
+  </Card>
+  <Card title="Custom HTTP endpoint" href="/configuration/ai-providers#custom-http-endpoint">
+    Any OpenAI-compatible endpoint. Set `base_url` and `model`. Works with local deployments, Azure OpenAI, and compatible proxies.
+  </Card>
+</CardGroup>
+
+---
+
+## Connect a provider
+
+<Tabs>
+  <Tab title="Anthropic">
+    <Steps>
+      <Step title="Get your API key">
+        Go to [console.anthropic.com](https://console.anthropic.com) → **API Keys** → create a new key and copy it.
+      </Step>
+      <Step title="Open Settings">
+        In narratorlog, go to **Settings → AI → New Provider**.
+      </Step>
+      <Step title="Configure the provider">
+        Select **Anthropic**, paste your API key, and choose a model (e.g. `claude-opus-4-5` or `claude-3-5-sonnet`).
+      </Step>
+      <Step title="Save">
+        Click **Save**. narratorlog verifies the key with a lightweight test call before saving.
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="OpenAI">
+    <Steps>
+      <Step title="Get your API key">
+        Go to [platform.openai.com](https://platform.openai.com) → **API keys** → create a new secret key and copy it.
+      </Step>
+      <Step title="Open Settings">
+        In narratorlog, go to **Settings → AI → New Provider**.
+      </Step>
+      <Step title="Configure the provider">
+        Select **OpenAI**, paste your API key, and choose a model (e.g. `gpt-4o` or `gpt-4o-mini`).
+      </Step>
+      <Step title="Save">
+        Click **Save**. narratorlog verifies the key before saving.
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="Ollama">
+    <Steps>
+      <Step title="Start Ollama">
+        Make sure Ollama is running and your chosen model is available. Confirm with `ollama list`.
+      </Step>
+      <Step title="Open Settings">
+        In narratorlog, go to **Settings → AI → New Provider**.
+      </Step>
+      <Step title="Configure the provider">
+        Select **Ollama**, enter the `base_url` for your Ollama instance (default: `http://localhost:11434`), and enter the model name exactly as it appears in `ollama list` (e.g. `llama3`, `mistral`).
+      </Step>
+      <Step title="Save">
+        Click **Save**. No API key is required for Ollama.
+      </Step>
+    </Steps>
+
+    <Note>
+      Ollama is the only provider where zero data leaves your machine. For maximum privacy, run Ollama locally and point narratorlog at it.
+    </Note>
+  </Tab>
+  <Tab title="Groq">
+    <Steps>
+      <Step title="Get your API key">
+        Go to [console.groq.com](https://console.groq.com) → **API Keys** → create a key and copy it.
+      </Step>
+      <Step title="Open Settings">
+        In narratorlog, go to **Settings → AI → New Provider**.
+      </Step>
+      <Step title="Configure the provider">
+        Select **Groq**, paste your API key, and choose a model (e.g. `llama-3.1-70b-versatile`).
+      </Step>
+      <Step title="Save">
+        Click **Save**. narratorlog verifies the key before saving.
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="Custom endpoint">
+    <Steps>
+      <Step title="Identify your endpoint">
+        Any OpenAI-compatible endpoint works. You need the `base_url` (e.g. `https://my-proxy.example.com/v1`) and the model name your endpoint accepts.
+      </Step>
+      <Step title="Open Settings">
+        In narratorlog, go to **Settings → AI → New Provider**.
+      </Step>
+      <Step title="Configure the provider">
+        Select **Custom**, enter the `base_url`, enter the model name, and optionally paste an API key if your endpoint requires one.
+      </Step>
+      <Step title="Save">
+        Click **Save**.
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+---
+
+## Set the provider in `.narratorlog.yml`
+
+After saving a provider in Settings, reference it in each repository's `.narratorlog.yml` using the `ai` block. The `provider` value must match the provider type you configured.
+
+```yaml
+ai:
+  provider: anthropic       # anthropic | openai | ollama | groq | custom
+  model: claude-opus-4-5
+```
+
+narratorlog reads this block when it processes a scan and routes AI calls to the matching provider.
+
+---
+
+## AI depth
+
+The `ai_depth` field in `scan` controls how much context the AI receives for each commit. More context produces richer drafts but takes longer and sends more data to the provider.
+
+| Depth | What the AI sees | Speed | Notes |
+|-------|-----------------|-------|-------|
+| `messages-only` | Commit messages and PR descriptions only | Fastest | No code leaves the machine beyond commit metadata. |
+| `standard` | Commit messages, PR descriptions, and file diffs | Balanced | Good quality for most repositories. Recommended default. |
+| `deep` | All of the above plus surrounding function context from the Rust codebase reader | Slowest, highest quality | Requires the `packages/reader` sidecar to be running. |
+
+Set depth in the `scan` block of `.narratorlog.yml`:
+
+```yaml
+scan:
+  ai_depth: standard        # messages-only | standard | deep
+```
+
+<Warning>
+  The `deep` depth level requires the Rust reader (`packages/reader`) to be running as a sidecar. `standard` and `messages-only` work without it. If you start a `deep` scan without the reader running, narratorlog falls back to `standard` and logs a warning.
+</Warning>
+
+<Note>
+  When using Ollama with `deep` depth, all context stays entirely on your machine — nothing is sent over the network.
+</Note>

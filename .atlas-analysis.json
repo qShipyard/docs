@@ -1,0 +1,128 @@
+{
+  "projectType": "saas",
+  "projectName": "narratorlog",
+  "projectDescription": "A self-hosted, open-source engineering communication tool that reads your git commits, understands them in context, and delivers audience-specific changelogs to Slack, Notion, email, and more — with human approval before anything is published.",
+  "theme": "luma",
+  "primaryColor": "#848c8e",
+  "lightColor": "#11161e",
+  "darkColor": "#cfd0d2",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "self-hosting"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "concepts/how-it-works",
+              "concepts/audiences",
+              "concepts/pipeline",
+              "concepts/scan-cadence"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/narratorlog-yml",
+              "configuration/ai-providers",
+              "configuration/sources",
+              "configuration/outputs"
+            ]
+          },
+          {
+            "group": "Plugins",
+            "pages": [
+              "plugins/overview",
+              "plugins/source-plugins",
+              "plugins/ai-provider-plugins",
+              "plugins/output-plugins",
+              "plugins/building-a-plugin"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "reference/environment-variables",
+              "reference/webhooks",
+              "reference/sdk"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "api/overview"
+            ]
+          },
+          {
+            "group": "Endpoints",
+            "pages": [
+              "api/auth",
+              "api/repositories",
+              "api/scans",
+              "api/drafts",
+              "api/team"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Reads git commits and generates audience-specific changelogs (developers, product, marketing, executives)",
+    "Human approval step before any content is published",
+    "Bring-your-own-AI: Anthropic Claude, OpenAI GPT-4o, Ollama (local), Groq, or custom endpoints",
+    "Connect GitHub, GitLab, and Bitbucket via Personal Access Token — no OAuth app required",
+    "Deliver approved drafts to Slack, Notion, Discord, Linear, email, or Markdown files",
+    "Extensible plugin system (TypeScript) for sources, AI providers, and outputs",
+    "Self-hosted — your code, your data, your infrastructure",
+    "Real-time scan progress via WebSocket",
+    "Configurable scan cadence: weekly schedule, on tag, on merge, or manual",
+    "8-stage pipeline with noise filtering, PR enrichment, and deep codebase context (Rust reader)"
+  ],
+  "publicApiSurface": [
+    "GET /api/v1/repos",
+    "POST /api/v1/repos",
+    "PATCH /api/v1/repos/:id",
+    "DELETE /api/v1/repos/:id",
+    "GET /api/v1/scans",
+    "POST /api/v1/scans",
+    "GET /api/v1/scans/:id",
+    "GET /api/v1/scans/:id/commits",
+    "GET /api/v1/scans/:id/groups",
+    "GET /api/v1/scans/:id/drafts",
+    "POST /api/v1/scans/:id/deliver",
+    "PATCH /api/v1/drafts/:id",
+    "POST /api/v1/drafts/:id/approve",
+    "POST /api/v1/drafts/:id/reject",
+    "POST /api/v1/drafts/:id/regenerate",
+    "GET /api/v1/drafts/:id/comments",
+    "POST /api/v1/drafts/:id/comments",
+    "GET /api/v1/team/members",
+    "POST /api/v1/team/invite",
+    "POST /webhooks/github",
+    "POST /webhooks/gitlab",
+    "POST /webhooks/bitbucket",
+    "GET /health",
+    "WS /ws/scans/:id",
+    "SourcePlugin.fetch(request: SourceRequest): Promise<SourceResponse>",
+    "AIProviderPlugin.summarize(request: SummarizeRequest): Promise<SummarizeResponse>",
+    "AIProviderPlugin.generate(request: GenerateRequest): Promise<GenerateResponse>",
+    "OutputPlugin.deliver(request: DeliverRequest): Promise<DeliverResponse>",
+    "runPlugin(plugin) — @narratorlog/sdk",
+    "getFinalContent(request) — @narratorlog/sdk",
+    "narratorlog create-plugin --type=output --name=<name>"
+  ]
+}

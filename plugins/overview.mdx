@@ -1,0 +1,90 @@
+---
+title: "narratorlog Plugin System Overview"
+sidebarTitle: "Overview"
+description: "narratorlog's plugin system lets you extend commit sources, AI providers, and delivery outputs. All plugins are TypeScript packages using the @narratorlog/sdk."
+---
+
+narratorlog's plugin system covers three layers: how commits are fetched (source plugins), how AI generates summaries (AI provider plugins), and where approved drafts are delivered (output plugins). All plugins are TypeScript packages that implement typed interfaces from `@narratorlog/sdk`. The Go core communicates with every plugin the same way — via subprocess JSON over stdin/stdout — so you can swap, extend, or build any layer without touching the core.
+
+## Three plugin types
+
+<CardGroup cols={3}>
+  <Card title="Source Plugins" icon="code-branch" href="/plugins/source-plugins">
+    Fetch commits from git platforms. Built-in plugins: **github**, **gitlab**, **git-cli**, **bitbucket**.
+  </Card>
+  <Card title="AI Provider Plugins" icon="sparkles" href="/plugins/ai-provider-plugins">
+    Call LLMs to generate summaries and audience drafts. Built-in plugins: **anthropic**, **openai**, **ollama**, **groq**.
+  </Card>
+  <Card title="Output Plugins" icon="paper-plane" href="/plugins/output-plugins">
+    Deliver approved drafts to destinations. Built-in plugins: **slack**, **notion**, **discord**, **linear**, **email**, **markdown**.
+  </Card>
+</CardGroup>
+
+## Built-in plugins
+
+narratorlog ships with a full set of built-in plugins for the most common platforms. You can use any of these out of the box — no installation required.
+
+| Type | Plugin | Description |
+|------|--------|-------------|
+| Source | `github` | GitHub REST API + PR resolution |
+| Source | `gitlab` | GitLab API + MR resolution |
+| Source | `bitbucket` | Bitbucket Cloud API |
+| Source | `git-cli` | Local git CLI, no platform API needed |
+| AI | `anthropic` | Claude via Anthropic API |
+| AI | `openai` | GPT-4o via OpenAI API |
+| AI | `ollama` | Any Ollama-hosted model (local) |
+| AI | `groq` | Groq API (fast inference) |
+| Output | `slack` | Post to Slack channel |
+| Output | `notion` | Update Notion page |
+| Output | `discord` | Post to Discord channel |
+| Output | `linear` | Post to Linear document |
+| Output | `email` | Send email digest |
+| Output | `markdown` | Write to CHANGELOG.md |
+
+## Plugin communication protocol
+
+The Go core treats every plugin as an isolated Node.js subprocess. To invoke a plugin, the core:
+
+1. Spawns the plugin process (`node plugins/outputs/slack/index.js`)
+2. Writes one JSON request object to the process's **stdin**
+3. Reads one JSON response object from the process's **stdout**
+4. Terminates the process
+
+Plugins never communicate directly with each other or with the database — the Go core is the sole orchestrator. Because the protocol is pure JSON over stdin/stdout, you can test any plugin manually with a single `echo` command.
+
+See [Build a Plugin](/plugins/building-a-plugin) for the full protocol rules and a working example.
+
+## Using a custom or community plugin
+
+Reference any plugin by path or name in your `.narratorlog.yml`. narratorlog resolves plugins in this order:
+
+1. **Relative path** (starts with `./`) — resolved from your repo root
+2. **npm package name** — resolved from `node_modules`
+3. **Built-in name** (e.g. `slack`) — resolved from narratorlog's bundled plugins
+
+```yaml
+outputs:
+  # Built-in plugin — shipped with narratorlog
+  - audience: developers
+    plugin: slack
+    config:
+      channel: "#eng-updates"
+
+  # Local custom plugin — relative path from repo root
+  - audience: product
+    plugin: ./my-plugins/teams
+    config:
+      webhook_url: https://...
+
+  # Community plugin — installed npm package
+  - audience: marketing
+    plugin: narratorlog-plugin-linear
+    config:
+      team_id: xxx
+```
+
+## Community plugin registry
+
+Community-built plugins are listed in [`PLUGINS.md`](https://github.com/qShipyard/narratorlog/blob/main/PLUGINS.md) in the narratorlog repository. Each entry includes the npm package name, supported plugin type, required environment variables, and a link to the author's repository.
+
+To share a plugin you have built, publish it to npm and open a pull request adding it to `PLUGINS.md`.

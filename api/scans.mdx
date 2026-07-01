@@ -1,0 +1,335 @@
+---
+title: "Scans API — Trigger and Monitor Scan Jobs"
+sidebarTitle: "Scans"
+description: "REST endpoints for listing scans, triggering manual scans, retrieving commits and commit groups, and monitoring scan status in narratorlog."
+---
+
+A scan is the core unit of work in narratorlog — it processes a time window of commits through all 8 pipeline stages, from fetching raw commits to generating audience drafts. Use these endpoints to list scans, trigger manual scans on demand, and retrieve the commits and commit groups they produced. For real-time progress while a scan is running, connect to the [WebSocket endpoint](/api/overview#websocket).
+
+## Scan Status Lifecycle
+
+Each scan moves through a defined set of statuses:
+
+| Status | Description |
+|--------|-------------|
+| `pending` | Queued, not yet started |
+| `running` | Pipeline stages are actively executing |
+| `awaiting_approval` | Drafts have been generated and are awaiting reviewer approval |
+| `delivered` | All drafts approved and delivered to outputs |
+| `failed` | An unrecoverable error occurred during processing |
+| `cancelled` | Manually cancelled before completion |
+
+---
+
+### GET /api/v1/scans
+
+List all scans for your team, sorted newest first. Filter by repository and status using query parameters.
+
+**Query parameters:**
+
+<ParamField query="repo_id" type="string">
+  Filter scans by repository UUID.
+</ParamField>
+
+<ParamField query="status" type="string">
+  Filter by scan status: `pending`, `running`, `awaiting_approval`, `delivered`, `failed`, or `cancelled`.
+</ParamField>
+
+<ParamField query="limit" type="integer">
+  Number of results per page. Default: `20`, maximum: `100`.
+</ParamField>
+
+<ParamField query="cursor" type="string">
+  Pagination cursor. Pass the `next_cursor` value from the previous response to fetch the next page.
+</ParamField>
+
+**Example request:**
+
+```shell
+curl "https://your-instance.com/api/v1/scans?repo_id=uuid&status=awaiting_approval&limit=20" \
+  -b cookies.txt
+```
+
+**Response 200:**
+
+```json
+{
+  "data": [
+    {
+      "id": "uuid",
+      "repository": {
+        "id": "uuid",
+        "full_name": "qShipyard/backend"
+      },
+      "status": "awaiting_approval",
+      "triggered_by": "scheduled",
+      "scan_from": "2026-06-14T00:00:00Z",
+      "scan_to": "2026-06-21T00:00:00Z",
+      "commit_count": 47,
+      "filtered_count": 12,
+      "drafts_pending": 2,
+      "drafts_approved": 1,
+      "created_at": "2026-06-21T09:00:00Z"
+    }
+  ],
+  "pagination": {
+    "next_cursor": "uuid",
+    "has_more": false
+  }
+}
+```
+
+<ResponseField name="triggered_by" type="string">
+  What initiated the scan: `scheduled`, `webhook`, or `manual`.
+</ResponseField>
+
+<ResponseField name="commit_count" type="integer">
+  Total number of commits fetched within the scan window.
+</ResponseField>
+
+<ResponseField name="filtered_count" type="integer">
+  Number of commits remaining after noise filtering.
+</ResponseField>
+
+<ResponseField name="drafts_pending" type="integer">
+  Number of audience drafts still awaiting approval.
+</ResponseField>
+
+<ResponseField name="drafts_approved" type="integer">
+  Number of audience drafts that have been approved.
+</ResponseField>
+
+---
+
+### POST /api/v1/scans
+
+Trigger a manual scan for a repository. You can specify a lookback duration or explicit start and end timestamps. If you provide `scan_from` and `scan_to`, they override `lookback`.
+
+<ParamField body="repository_id" type="string" required>
+  UUID of the connected repository to scan.
+</ParamField>
+
+<ParamField body="lookback" type="string">
+  Duration string for how far back to scan, e.g. `7d`, `14d`, `30d`. Used when you don't specify exact timestamps.
+</ParamField>
+
+<ParamField body="scan_from" type="string">
+  ISO 8601 UTC timestamp for the start of the scan window. Overrides `lookback` when provided together with `scan_to`.
+</ParamField>
+
+<ParamField body="scan_to" type="string">
+  ISO 8601 UTC timestamp for the end of the scan window.
+</ParamField>
+
+**Example request:**
+
+```shell
+curl -X POST https://your-instance.com/api/v1/scans \
+  -b cookies.txt \
+  -H "Content-Type: application/json" \
+  -d '{
+    "repository_id": "uuid",
+    "lookback": "7d"
+  }'
+```
+
+```json
+{
+  "repository_id": "uuid",
+  "lookback": "7d"
+}
+```
+
+Or with explicit timestamps:
+
+```json
+{
+  "repository_id": "uuid",
+  "scan_from": "2026-06-14T00:00:00Z",
+  "scan_to": "2026-06-21T00:00:00Z"
+}
+```
+
+**Response 202:**
+
+```json
+{
+  "id": "uuid",
+  "status": "pending",
+  "message": "Scan queued."
+}
+```
+
+<Tip>
+  After triggering a scan, connect to `WS /ws/scans/:id` using the returned `id` to stream real-time progress updates through each pipeline stage.
+</Tip>
+
+---
+
+### GET /api/v1/scans/:id
+
+Get full detail for a single scan, including config snapshot and timestamps.
+
+**Example request:**
+
+```shell
+curl https://your-instance.com/api/v1/scans/uuid \
+  -b cookies.txt
+```
+
+**Response 200:**
+
+```json
+{
+  "id": "uuid",
+  "repository": {
+    "id": "uuid",
+    "full_name": "qShipyard/backend"
+  },
+  "status": "awaiting_approval",
+  "triggered_by": "scheduled",
+  "triggered_by_user": null,
+  "scan_from": "2026-06-14T00:00:00Z",
+  "scan_to": "2026-06-21T00:00:00Z",
+  "commit_count": 47,
+  "filtered_count": 12,
+  "config_snapshot": {},
+  "created_at": "2026-06-21T09:00:00Z",
+  "updated_at": "2026-06-21T09:04:21Z"
+}
+```
+
+<ResponseField name="triggered_by_user" type="object | null">
+  If the scan was triggered manually, this contains the user object (`id`, `name`) who triggered it. `null` for scheduled or webhook-triggered scans.
+</ResponseField>
+
+<ResponseField name="config_snapshot" type="object">
+  A snapshot of the repository's scan configuration at the time the scan ran. This is preserved even if you later update the repository's config.
+</ResponseField>
+
+---
+
+### GET /api/v1/scans/:id/commits
+
+List the commits that were fetched and processed within a scan. By default, noise commits (bot commits, chores, merge commits) are excluded.
+
+**Query parameters:**
+
+<ParamField query="noise" type="boolean">
+  Set to `true` to include commits flagged as noise. Default: `false`.
+</ParamField>
+
+**Example request:**
+
+```shell
+curl "https://your-instance.com/api/v1/scans/uuid/commits?noise=false" \
+  -b cookies.txt
+```
+
+**Response 200:**
+
+```json
+{
+  "data": [
+    {
+      "id": "uuid",
+      "sha": "abc123",
+      "message": "feat: add OAuth login",
+      "author_name": "James Okafor",
+      "committed_at": "2026-06-18T14:32:00Z",
+      "pr_number": 142,
+      "pr_title": "Add GitHub OAuth login",
+      "is_breaking": false,
+      "is_noise": false,
+      "is_bot": false,
+      "domain": "auth",
+      "group_id": "uuid"
+    }
+  ]
+}
+```
+
+<ResponseField name="is_breaking" type="boolean">
+  Whether the pipeline classified this commit as a breaking change.
+</ResponseField>
+
+<ResponseField name="is_noise" type="boolean">
+  Whether the pipeline filtered this commit as noise (e.g. dependency bumps, merge commits).
+</ResponseField>
+
+<ResponseField name="is_bot" type="boolean">
+  Whether the commit was authored by a bot account.
+</ResponseField>
+
+<ResponseField name="domain" type="string">
+  The functional domain the pipeline assigned this commit to, e.g. `auth`, `billing`, `infrastructure`.
+</ResponseField>
+
+<ResponseField name="group_id" type="string">
+  UUID of the commit group this commit was assigned to. Use this to correlate with `GET /api/v1/scans/:id/groups`.
+</ResponseField>
+
+---
+
+### GET /api/v1/scans/:id/groups
+
+List the commit groups produced by the pipeline for a scan. Groups cluster related commits under a single label and summary.
+
+**Example request:**
+
+```shell
+curl https://your-instance.com/api/v1/scans/uuid/groups \
+  -b cookies.txt
+```
+
+**Response 200:**
+
+```json
+{
+  "data": [
+    {
+      "id": "uuid",
+      "label": "Add GitHub OAuth login",
+      "group_type": "feature",
+      "commit_count": 3,
+      "summary": "Implements GitHub OAuth 2.0 login flow...",
+      "commits": ["uuid1", "uuid2", "uuid3"]
+    }
+  ]
+}
+```
+
+<ResponseField name="label" type="string">
+  A human-readable title for the group, generated by the pipeline.
+</ResponseField>
+
+<ResponseField name="group_type" type="string">
+  The type of change: `feature`, `fix`, `breaking`, `chore`, or similar.
+</ResponseField>
+
+<ResponseField name="summary" type="string">
+  An AI-generated prose summary of the group's collective change.
+</ResponseField>
+
+<ResponseField name="commits" type="array">
+  List of commit UUIDs assigned to this group. Cross-reference with `GET /api/v1/scans/:id/commits`.
+</ResponseField>
+
+---
+
+### DELETE /api/v1/scans/:id
+
+Cancel a scan that is currently `pending` or `running`. This stops the pipeline and marks the scan as `cancelled`. You cannot cancel a scan that has already reached `awaiting_approval`, `delivered`, or `failed`.
+
+**Example request:**
+
+```shell
+curl -X DELETE https://your-instance.com/api/v1/scans/uuid \
+  -b cookies.txt
+```
+
+**Response 204:** No content.
+
+<Warning>
+  Cancelling a running scan abandons any pipeline work completed so far. No partial drafts are saved. If you need the output, trigger a new scan.
+</Warning>

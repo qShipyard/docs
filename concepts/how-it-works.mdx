@@ -1,0 +1,77 @@
+---
+title: "How narratorlog Turns Commits into Changelogs"
+sidebarTitle: "How It Works"
+description: "narratorlog reads commits, understands them in context, generates audience-specific drafts with AI, and delivers them only after your team approves."
+---
+
+narratorlog bridges the gap between what your engineering team ships and what the rest of your organization hears about it. Connect a repository, configure your audiences, and narratorlog automatically reads your commits, understands them in context, generates a separate changelog draft for each audience, waits for your team to review and approve, and then delivers every draft to exactly the right destination — Slack, Notion, email, and more.
+
+```
+Your repos → narratorlog reads commits → understands context → generates drafts per audience
+          → team reviews and approves → delivers to Slack, Notion, email, and more
+```
+
+## The 8-stage pipeline
+
+Every scan runs the same 8-stage pipeline. Stages 1–6 are fully automatic. Stage 7 pauses for your team's review. Stage 8 fires as soon as all drafts are approved. See [The Pipeline](/concepts/pipeline) for a deep dive into each stage.
+
+| Stage | Name | What it does |
+|-------|------|--------------|
+| 1 | **SCAN** | Fetches raw commits from your git platform for the scan window |
+| 2 | **FILTER** | Removes noise — bots, duplicate commits, lock-file-only changes, and WIP messages |
+| 3 | **ENRICH** | Adds PR and issue context, detects breaking changes, and infers code domain |
+| 4 | **CONTEXT** | Reads surrounding codebase context via the Rust reader (depth=deep only) |
+| 5 | **CHUNK** | Groups related commits into logical units by PR or domain |
+| 6 | **SUMMARIZE** | Runs a two-pass AI process: chunk summaries first, then full audience drafts in parallel |
+| 7 | **APPROVAL** | Pauses for human review — your team reads, edits, and approves each draft |
+| 8 | **DELIVER** | Sends every approved draft to its configured output destination |
+
+## Triggers
+
+A scan starts whenever one of the following occurs:
+
+- **Schedule** — narratorlog runs automatically on a configured cadence (default: every Monday at 00:00 UTC).
+- **Webhook** — your git platform sends a webhook on PR merge or new tag, and narratorlog starts a scan immediately.
+- **Dashboard** — click **New Scan** on any repository from the web app.
+- **API** — send `POST /api/v1/scans` with a `repository_id` and a time window.
+- **CLI** — run `narratorlog generate` from your terminal or CI pipeline.
+
+See [Scan Cadence](/concepts/scan-cadence) for the full breakdown of trigger options and scan windows.
+
+## Human approval
+
+narratorlog treats AI as a first draft, not a final product. After Stage 6 finishes generating drafts, the scan enters `awaiting_approval` status and your configured reviewers are notified — via Slack, email, or a notification badge in the web app.
+
+<Note>
+  Drafts are never delivered without explicit approval. There are no silent auto-publishes.
+</Note>
+
+In the review UI at `/scans/:id/review`, you can:
+
+- Read each audience draft side-by-side with the underlying commit groups that produced it.
+- Leave inline comments for other reviewers.
+- Edit the draft content directly before approving.
+- Approve the draft, or reject it with an optional note. If you reject with `regenerate=true`, narratorlog immediately queues a new AI generation pass for that audience.
+
+You can configure an optional timeout — for example, `approval.timeout: 24h` will auto-approve all pending drafts after 24 hours if no action is taken. Set it to `never` to require manual approval every time.
+
+## Delivery
+
+Once every configured audience draft for a scan has been approved, narratorlog automatically enqueues a delivery job. Each draft is sent to its configured output plugin — Slack, Notion, Markdown file, email, and so on. narratorlog stores a delivery reference (a Slack message URL, a Notion page link, etc.) against the scan record so you always know where each draft went.
+
+If you prefer not to wait for the automatic trigger, you can kick off delivery manually from the scan review page at any point after the last draft is approved.
+
+<CardGroup cols={2}>
+  <Card title="Audiences" href="/concepts/audiences" icon="users">
+    Learn how narratorlog generates a separate, tone-matched draft for each audience you configure.
+  </Card>
+  <Card title="Pipeline" href="/concepts/pipeline" icon="diagram-project">
+    Explore what happens in each of the 8 pipeline stages, and what you can configure at every step.
+  </Card>
+  <Card title="Scan Cadence" href="/concepts/scan-cadence" icon="clock">
+    Configure when scans run — weekly, on merge, on tag, or triggered manually.
+  </Card>
+  <Card title="Outputs" href="/configuration/outputs" icon="arrow-up-right-from-square">
+    Set up delivery destinations: Slack, Notion, Discord, Linear, email, and custom webhooks.
+  </Card>
+</CardGroup>

@@ -1,0 +1,166 @@
+---
+title: "Team API — Members, Invitations, and Roles"
+sidebarTitle: "Team"
+description: "REST endpoints for managing your narratorlog team — listing members, inviting new users, updating roles, and removing members."
+---
+
+These endpoints manage your narratorlog team's membership. Admin users can invite new members, update roles, and remove members. Reviewers can view team details but cannot make changes to membership or roles.
+
+## Roles
+
+narratorlog has two roles:
+
+| Role | Permissions |
+|------|-------------|
+| `admin` | Full access — manage team membership, configure repositories, approve and edit drafts, trigger delivery |
+| `reviewer` | Can approve and edit drafts, add comments — cannot manage team settings or repository configuration |
+
+<Note>
+  All endpoints under `/api/v1/team/members` that modify state (invite, update role, remove) require the `admin` role. Attempting them as a `reviewer` returns `403 Forbidden`.
+</Note>
+
+---
+
+### GET /api/v1/team
+
+Get details about your team, including its name, slug, and configuration.
+
+**Example request:**
+
+```shell
+curl https://your-instance.com/api/v1/team \
+  -b cookies.txt
+```
+
+**Response 200:** Team object with `id`, `name`, `slug`, and current configuration.
+
+---
+
+### GET /api/v1/team/members
+
+List all members of your team.
+
+**Example request:**
+
+```shell
+curl https://your-instance.com/api/v1/team/members \
+  -b cookies.txt
+```
+
+**Response 200:**
+
+```json
+{
+  "data": [
+    {
+      "id": "uuid",
+      "name": "James Okafor",
+      "email": "james@example.com",
+      "role": "admin",
+      "avatar_url": "...",
+      "created_at": "2026-01-10T00:00:00Z"
+    }
+  ]
+}
+```
+
+<ResponseField name="id" type="string">
+  UUID of the team member.
+</ResponseField>
+
+<ResponseField name="role" type="string">
+  The member's role: `admin` or `reviewer`.
+</ResponseField>
+
+<ResponseField name="created_at" type="string">
+  ISO 8601 timestamp of when the member joined the team.
+</ResponseField>
+
+---
+
+### POST /api/v1/team/invite
+
+Invite a new user to join your team. narratorlog sends an email to the specified address with a setup link. The user must complete account setup before they can log in.
+
+<ParamField body="email" type="string" required>
+  The email address to send the invitation to.
+</ParamField>
+
+<ParamField body="role" type="string" required>
+  The role to assign the invited user. Must be `admin` or `reviewer`.
+</ParamField>
+
+**Example request:**
+
+```shell
+curl -X POST https://your-instance.com/api/v1/team/invite \
+  -b cookies.txt \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "sarah@example.com",
+    "role": "reviewer"
+  }'
+```
+
+```json
+{
+  "email": "sarah@example.com",
+  "role": "reviewer"
+}
+```
+
+**Response 201:**
+
+```json
+{ "message": "Invitation sent to sarah@example.com" }
+```
+
+**Response 409** — a member with this email address already exists in the team.
+
+<Tip>
+  Assign new team members the `reviewer` role by default. You can always promote them to `admin` later using `PATCH /api/v1/team/members/:id`.
+</Tip>
+
+---
+
+### PATCH /api/v1/team/members/:id
+
+Update the role of a team member. Admin only. You can promote a reviewer to admin or demote an admin to reviewer.
+
+<ParamField body="role" type="string" required>
+  The new role for the member: `admin` or `reviewer`.
+</ParamField>
+
+**Example request:**
+
+```shell
+curl -X PATCH https://your-instance.com/api/v1/team/members/uuid \
+  -b cookies.txt \
+  -H "Content-Type: application/json" \
+  -d '{ "role": "reviewer" }'
+```
+
+```json
+{ "role": "reviewer" }
+```
+
+**Response 200:** The updated member object.
+
+---
+
+### DELETE /api/v1/team/members/:id
+
+Remove a member from your team. Admin only. You cannot remove yourself — use this endpoint only to remove other members.
+
+**Example request:**
+
+```shell
+curl -X DELETE https://your-instance.com/api/v1/team/members/uuid \
+  -b cookies.txt
+```
+
+**Response 204:** No content.
+
+<Warning>
+  Removing a member immediately revokes their session and access. They will be logged out on their next request. This action cannot be undone — you would need to send a new invitation to restore access.
+</Warning>

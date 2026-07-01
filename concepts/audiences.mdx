@@ -1,0 +1,64 @@
+---
+title: "Audience-Specific Changelogs in narratorlog"
+sidebarTitle: "Audiences"
+description: "narratorlog generates a separate changelog draft per audience — developers, product, marketing, executives — each in the right tone and detail level."
+---
+
+An **audience** in narratorlog is a named recipient group with a specific tone and description. When a scan completes its AI summarization stage, narratorlog produces one independent draft per audience — written in the voice, language, and level of detail that recipient group actually needs. Your developers get a technically precise breakdown of what changed. Your executives get a concise narrative of what the team is building and shipping. Each draft starts from the same set of commits, but arrives as a completely different piece of writing.
+
+## Built-in audiences
+
+narratorlog ships with four built-in audiences ready to use:
+
+| Audience ID | Tone | What they receive |
+|-------------|------|-------------------|
+| `developers` | Technical, precise | What changed and what to watch out for — file-level detail, breaking change callouts, author attribution |
+| `product` | Feature-oriented, plain English | What moved and what is ready to demo — focused on feature progress, not implementation |
+| `marketing` | Benefit-focused, no jargon | Copy they can actually use — user-facing language about what is new and why it matters |
+| `executives` | High-level narrative | What the team is building and shipping — velocity signal, major milestones, strategic direction |
+
+## How drafts are generated
+
+narratorlog uses a two-pass AI process to produce each audience draft:
+
+**Pass 1 — Chunk summarization.** Each logical group of commits (grouped by PR or domain in Stage 5) is summarized independently in 2–3 technical sentences. All groups are summarized in parallel. These chunk summaries are the shared source of truth for every audience.
+
+**Pass 2 — Audience generation.** narratorlog takes the complete set of chunk summaries from Pass 1 and runs one AI call per configured audience — in parallel. Each call receives the same chunk summaries but a different audience definition: the audience ID, tone, and description. The result is a fully written draft shaped for that specific reader.
+
+Because Pass 2 works from summaries rather than raw commits, each audience draft is consistent with the others but independently tailored. Changing one draft does not affect the others.
+
+## Approving and editing drafts
+
+Once all drafts are generated, your scan moves to `awaiting_approval` status and reviewers are notified. In the review UI at `/scans/:id/review`, each audience draft appears in its own tab. For every draft, you can:
+
+- Read the full generated content alongside the commit groups that informed it.
+- Leave comments for other reviewers without editing the draft itself.
+- Make inline edits directly in the draft — your changes are preserved through delivery.
+- **Approve** the draft to mark it ready for delivery.
+- **Reject** the draft with an optional note. If you set `regenerate: true`, narratorlog immediately queues a new Pass 2 AI call for that audience only — other approved drafts are not affected.
+
+<Note>
+  Delivery does not begin until all configured audiences have an approved draft. You can approve audiences one at a time as reviewers sign off.
+</Note>
+
+## Configuring audiences
+
+Audiences are configured per repository in your `.narratorlog.yml` file under the `audiences:` key:
+
+```yaml
+audiences:
+  - id: developers
+    tone: technical
+  - id: product
+    tone: plain-english
+  - id: marketing
+    tone: benefit-focused
+  - id: executives
+    tone: high-level narrative
+```
+
+See [.narratorlog.yml Reference](/configuration/narratorlog-yml) for the full configuration schema, including per-audience output routing.
+
+<Tip>
+  You can define custom audiences with any `id`, `tone`, and `description` you choose. narratorlog passes your tone and description directly to the AI when generating that audience's draft — so a `tone: "friendly and concise"` audience with a `description: "new team members learning the codebase"` will produce a draft written exactly for that reader.
+</Tip>

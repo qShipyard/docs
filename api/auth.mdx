@@ -1,0 +1,134 @@
+---
+title: "Authentication API — Login, Logout, and Session"
+sidebarTitle: "Auth"
+description: "POST /auth/login to get a session cookie, GET /auth/me to verify your session, and POST /auth/logout to clear it. All API calls require an active session."
+---
+
+narratorlog uses session-based authentication with HTTP-only secure cookies. Authenticate with your email and password to receive a session cookie, which is then sent automatically on all subsequent requests. There are no API keys or bearer tokens — the session cookie is the credential.
+
+<Note>
+  The auth endpoints live at `/auth/*`, not under `/api/v1/*`. All other resource endpoints require the session cookie set by a successful login.
+</Note>
+
+---
+
+### POST /auth/login
+
+Authenticate with email and password. On success, the server sets an HTTP-only session cookie that your browser or HTTP client sends automatically on future requests.
+
+<ParamField body="email" type="string" required>
+  The email address of the narratorlog account.
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  The account password.
+</ParamField>
+
+**Example request:**
+
+```shell
+curl -X POST https://your-instance.com/auth/login \
+  -H "Content-Type: application/json" \
+  -c cookies.txt \
+  -d '{
+    "email": "james@example.com",
+    "password": "your-password"
+  }'
+```
+
+```json
+{
+  "email": "james@example.com",
+  "password": "your-password"
+}
+```
+
+**Response 200** — session cookie is set; no body is returned.
+
+**Response 401** — invalid credentials:
+
+```json
+{
+  "error": {
+    "code": "INVALID_CREDENTIALS",
+    "message": "Email or password is incorrect.",
+    "details": {}
+  }
+}
+```
+
+<Warning>
+  Store the session cookie securely. The cookie is HTTP-only and cannot be read by JavaScript, but it must be included in every subsequent API request. Use `-c` and `-b` flags in curl, or rely on your HTTP client's cookie jar.
+</Warning>
+
+---
+
+### GET /auth/me
+
+Returns the currently authenticated user, along with their role and team membership. Use this endpoint to verify that your session is still active.
+
+**Example request:**
+
+```shell
+curl https://your-instance.com/auth/me \
+  -b cookies.txt
+```
+
+**Response 200:**
+
+```json
+{
+  "id": "uuid",
+  "email": "james@example.com",
+  "name": "James Okafor",
+  "avatar_url": "https://...",
+  "role": "admin",
+  "team": {
+    "id": "uuid",
+    "name": "qShipyard Engineering",
+    "slug": "qShipyard"
+  }
+}
+```
+
+<ResponseField name="id" type="string">
+  The UUID of the authenticated user.
+</ResponseField>
+
+<ResponseField name="email" type="string">
+  The user's email address.
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  The user's display name.
+</ResponseField>
+
+<ResponseField name="avatar_url" type="string">
+  URL to the user's avatar image.
+</ResponseField>
+
+<ResponseField name="role" type="string">
+  The user's role in the team. Either `admin` or `reviewer`.
+</ResponseField>
+
+<ResponseField name="team" type="object">
+  The team this user belongs to, including `id`, `name`, and `slug`.
+</ResponseField>
+
+**Response 401** — no active session. You must log in first.
+
+---
+
+### POST /auth/logout
+
+Clears the current session cookie and ends the authenticated session. After calling this endpoint, all subsequent requests will return `401` until you log in again.
+
+**Example request:**
+
+```shell
+curl -X POST https://your-instance.com/auth/logout \
+  -b cookies.txt \
+  -c cookies.txt
+```
+
+**Response 200** — session cleared; no body is returned.

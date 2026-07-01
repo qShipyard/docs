@@ -1,0 +1,89 @@
+---
+title: "Inbound Webhooks for narratorlog Scan Triggers"
+sidebarTitle: "Webhooks"
+description: "narratorlog registers webhooks on GitHub, GitLab, and Bitbucket to trigger scans automatically on push, tag, or PR merge events."
+---
+
+narratorlog registers webhooks on your git platform when you connect a repository. These webhooks allow narratorlog to trigger scans automatically based on your configured cadence — on push, on tag, or on PR merge. You don't need to configure the webhooks manually; narratorlog handles registration and removal for you.
+
+## Webhook endpoints
+
+Each git platform has its own dedicated endpoint with its own signature verification scheme.
+
+| Platform | Endpoint | Signature Header |
+|---|---|---|
+| GitHub | `POST /webhooks/github` | `X-Hub-Signature-256` |
+| GitLab | `POST /webhooks/gitlab` | `X-Gitlab-Token` |
+| Bitbucket | `POST /webhooks/bitbucket` | `X-Hub-Signature` |
+
+## Handled events
+
+narratorlog listens to a specific set of events per platform and only enqueues a scan when the event matches your repository's configured cadence.
+
+**GitHub**
+
+| Event | Condition | Action |
+|---|---|---|
+| `push` | Push is to the default branch | Enqueue scan |
+| `create` (tag) | Repository cadence is `on-tag` | Enqueue scan |
+| `pull_request` (closed + merged) | Repository cadence is `on-merge` | Enqueue scan |
+
+**GitLab**
+
+| Event | Condition | Action |
+|---|---|---|
+| Push event | Push is to the default branch | Enqueue scan |
+| Tag push event | Repository cadence is `on-tag` | Enqueue scan |
+| Merge request event (closed + merged) | Repository cadence is `on-merge` | Enqueue scan |
+
+**Bitbucket**
+
+| Event | Condition | Action |
+|---|---|---|
+| `repo:push` | Push is to the default branch | Enqueue scan |
+| `pullrequest:fulfilled` | Repository cadence is `on-merge` | Enqueue scan |
+
+## Automatic webhook management
+
+narratorlog fully manages the webhook lifecycle for you:
+
+- **Connecting a repository** — when you connect a repo via the UI or `POST /api/v1/repos`, narratorlog immediately registers the webhook on your git platform using your stored PAT.
+- **Disconnecting a repository** — when you disconnect a repo via `DELETE /api/v1/repos/:id`, narratorlog removes the webhook from the platform. No orphaned hooks are left behind.
+
+No manual steps are needed at any point.
+
+## Webhook signature verification
+
+narratorlog verifies the HMAC-SHA256 signature on every inbound webhook request before processing it. Requests with an invalid or missing signature are rejected with a `401` response. The webhook secret is generated automatically when the webhook is registered and is stored encrypted alongside the repository record.
+
+<Note>
+  If you're behind a firewall or load balancer, ensure the `/webhooks/*` path is publicly accessible from your git platform's IP ranges. GitHub publishes its webhook IP ranges at [https://api.github.com/meta](https://api.github.com/meta).
+</Note>
+
+## Webhook payload
+
+narratorlog receives the standard platform webhook payloads. Here is a simplified example of a GitHub push event:
+
+```json
+{
+  "ref": "refs/heads/main",
+  "repository": {
+    "full_name": "org/backend",
+    "default_branch": "main"
+  },
+  "commits": [
+    {
+      "id": "abc123",
+      "message": "feat: add OAuth login"
+    }
+  ]
+}
+```
+
+## Response
+
+All webhook endpoints return the following body on success, regardless of whether a scan was actually enqueued. This avoids leaking internal state to external callers.
+
+```json
+{ "received": true }
+```

@@ -1,0 +1,140 @@
+---
+title: "Connect Git Repositories to narratorlog"
+sidebarTitle: "Sources"
+description: "Connect GitHub, GitLab, and Bitbucket repositories to narratorlog using Personal Access Tokens. No OAuth app or admin access required."
+---
+
+narratorlog connects to your git platform using a Personal Access Token (PAT). No OAuth app registration required. The PAT is stored encrypted on your instance and used to fetch commit data and register webhooks automatically when you connect a repository.
+
+## Supported git platforms
+
+- **GitHub** — github.com and GitHub Enterprise Server
+- **GitLab** — gitlab.com and self-hosted GitLab instances
+- **Bitbucket Cloud** — bitbucket.org
+
+---
+
+## Create a Personal Access Token
+
+Generate a PAT on your git platform before adding a source in narratorlog.
+
+<Tabs>
+  <Tab title="GitHub">
+    <Steps>
+      <Step title="Open token settings">
+        Go to [github.com](https://github.com) → your profile avatar → **Settings** → **Developer settings** → **Personal access tokens** → **Tokens (classic)**.
+      </Step>
+      <Step title="Generate a new token">
+        Click **Generate new token (classic)**. Give it a descriptive name like `narratorlog`.
+      </Step>
+      <Step title="Select scopes">
+        Select the following scopes:
+        - `repo` — full repository access (required for private repositories)
+        - `public_repo` — public repository access only (if all your repositories are public)
+      </Step>
+      <Step title="Copy the token">
+        Click **Generate token** and copy the value immediately. GitHub only shows it once.
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="GitLab">
+    <Steps>
+      <Step title="Open access tokens">
+        Go to [gitlab.com](https://gitlab.com) → your profile avatar → **Preferences** → **Access Tokens** → **Add new token**.
+      </Step>
+      <Step title="Name and expiry">
+        Give the token a name like `narratorlog`. Set an expiry date if your security policy requires it.
+      </Step>
+      <Step title="Select scopes">
+        Select the following scopes:
+        - `read_api` — read access to the API
+        - `read_repository` — read access to repository content
+      </Step>
+      <Step title="Copy the token">
+        Click **Create personal access token** and copy the value. GitLab only shows it once.
+      </Step>
+    </Steps>
+  </Tab>
+  <Tab title="Bitbucket">
+    <Steps>
+      <Step title="Open app passwords">
+        Go to [bitbucket.org](https://bitbucket.org) → your profile avatar → **Personal settings** → **App passwords** → **Create app password**.
+      </Step>
+      <Step title="Name the password">
+        Give it a label like `narratorlog`.
+      </Step>
+      <Step title="Select permissions">
+        Under **Repositories**, check **Read**.
+      </Step>
+      <Step title="Copy the password">
+        Click **Create** and copy the app password. Bitbucket only shows it once.
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+---
+
+## Add a source
+
+Once you have your PAT, connect the platform to narratorlog.
+
+<Steps>
+  <Step title="Open Sources settings">
+    Go to **Settings → Sources** in the narratorlog web UI.
+  </Step>
+  <Step title="Add a new source">
+    Click **Add Source**.
+  </Step>
+  <Step title="Select your platform">
+    Choose **GitHub**, **GitLab**, or **Bitbucket** from the list.
+  </Step>
+  <Step title="Paste your token">
+    Paste the Personal Access Token you created above.
+  </Step>
+  <Step title="Enter a base URL (self-hosted only)">
+    If you are connecting to a self-hosted instance (GitHub Enterprise or self-hosted GitLab), enter the base URL — for example, `https://gitlab.mycompany.com`. Leave this field blank for github.com, gitlab.com, and bitbucket.org.
+  </Step>
+  <Step title="Save">
+    Click **Save**. narratorlog calls the platform's authenticated-user endpoint to verify the token and stores your username from the response.
+  </Step>
+</Steps>
+
+<Note>
+  The PAT doubles as identity. When you save a token, narratorlog stores your username from the platform's authenticated-user endpoint. When `author_login` filtering is active, scans are scoped to pull requests you authored — turning narratorlog into a personal shipping log.
+</Note>
+
+---
+
+## Connect a repository
+
+Once a source is saved, connect individual repositories to narratorlog.
+
+<Steps>
+  <Step title="Open Repositories">
+    Go to **Repositories → New Repository** in the narratorlog web UI.
+  </Step>
+  <Step title="Select the source">
+    Choose the source connection you just created.
+  </Step>
+  <Step title="Browse available repositories">
+    narratorlog fetches the list of repositories your token can access. Browse or search for the repository you want to connect.
+  </Step>
+  <Step title="Click Connect">
+    Click **Connect** next to the repository. narratorlog registers a webhook on the platform automatically.
+  </Step>
+</Steps>
+
+---
+
+## Webhook registration
+
+When you connect a repository, narratorlog registers a webhook on the git platform to trigger scans automatically. The webhook fires on push events, tag pushes, or PR merges — depending on your repository's configured `cadence` in `.narratorlog.yml`.
+
+When you disconnect a repository in narratorlog, the webhook is removed from the platform automatically.
+
+narratorlog validates all incoming webhook payloads using HMAC signature verification before processing them.
+
+<Warning>
+  If you rotate your PAT, update it in **Settings → Sources** immediately. Any scans triggered while the token is stale will fail with a `401 Unauthorized` error and must be re-run manually once the token is updated.
+</Warning>
